@@ -1,0 +1,8 @@
+# Essential dependencies for SPY Backtest
+pandas
+numpy
+matplotlib
+yfinance
+alpaca-py
+pytest
+pyarrow
