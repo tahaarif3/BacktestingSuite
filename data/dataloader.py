@@ -22,10 +22,10 @@ class DataLoader(IMarketDataRepository):
     # Load cached Parquet data from local disk
     def load_data(self, filepath: Optional[str] = None) -> pd.DataFrame:
         """
-        Read the Parquet file from disk.
+        Read the Parquet or CSV file from disk.
         
         Args:
-            filepath: Path to the Parquet file. If None, uses the one from init.
+            filepath: Path to the Parquet or CSV file. If None, uses the one from init.
             
         Returns:
             pd.DataFrame: Raw loaded DataFrame.
@@ -34,7 +34,9 @@ class DataLoader(IMarketDataRepository):
         if not path:
             raise ValueError("No filepath specified for loading data.")
         
-        print(f"Loading data from Parquet file: {path}")
+        print(f"Loading data: {path}")
+        if path.endswith(".csv"):
+            return pd.read_csv(path)
         return pd.read_parquet(path)
 
     # Standardize column casing, handle MultiIndex columns, rename adjusted close, remove duplicates, and impute NaNs
@@ -81,6 +83,11 @@ class DataLoader(IMarketDataRepository):
         # 4. Standardize index
         # Ensure the index is a datetime index
         if not isinstance(df.index, pd.DatetimeIndex):
+            # Check if index needs to be set from columns first
+            for col in ["datetime", "timestamp", "date_time"]:
+                if col in df.columns:
+                    df = df.set_index(col)
+                    break
             df.index = pd.to_datetime(df.index)
             
         df.index.name = "timestamp"

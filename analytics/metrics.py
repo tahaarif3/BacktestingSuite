@@ -22,7 +22,12 @@ class PerformanceMetrics:
     @staticmethod
     def calculate_sharpe_ratio(equity_curve: pd.Series) -> float:
         """Calculates Sharpe Ratio assuming 0% risk-free rate."""
-        returns = equity_curve.pct_change().fillna(0.0)
+        unique_dates = np.unique(equity_curve.index.date)
+        if len(unique_dates) < len(equity_curve):
+            daily_equity = equity_curve.resample("D").last().ffill()
+        else:
+            daily_equity = equity_curve
+        returns = daily_equity.pct_change().fillna(0.0)
         std = returns.std()
         if std == 0 or len(returns) < 2:
             return 0.0
@@ -31,7 +36,12 @@ class PerformanceMetrics:
     @staticmethod
     def calculate_sortino_ratio(equity_curve: pd.Series) -> float:
         """Calculates Sortino Ratio utilizing downside standard deviation."""
-        returns = equity_curve.pct_change().fillna(0.0)
+        unique_dates = np.unique(equity_curve.index.date)
+        if len(unique_dates) < len(equity_curve):
+            daily_equity = equity_curve.resample("D").last().ffill()
+        else:
+            daily_equity = equity_curve
+        returns = daily_equity.pct_change().fillna(0.0)
         # Downside returns (positive returns set to 0.0)
         downside_returns = np.minimum(returns, 0.0)
         downside_std = np.sqrt(np.mean(downside_returns ** 2))
@@ -43,6 +53,7 @@ class PerformanceMetrics:
         ann_return = returns.mean() * 252
         ann_downside_std = downside_std * np.sqrt(252)
         return float(ann_return / ann_downside_std)
+
 
     @staticmethod
     def calculate_max_drawdown(equity_curve: pd.Series) -> float:

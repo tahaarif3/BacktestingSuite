@@ -24,6 +24,7 @@ from strat.ema_crossover import EMACrossoverStrategy
 from strat.rsi_mean_reversion import RSIMeanReversionStrategy
 from strat.bollinger_bands import BollingerBandsStrategy
 from strat.macd import MACDStrategy
+from strat.genetic_programming import GeneticProgrammingStrategy
 
 
 def parse_args():
@@ -34,7 +35,7 @@ def parse_args():
     # Strategy settings
     parser.add_argument(
         "--strategy",
-        choices=["buy_and_hold", "sma", "ema", "rsi", "bb", "macd"],
+        choices=["buy_and_hold", "sma", "ema", "rsi", "bb", "macd", "gp"],
         default="sma",
         help="Trading strategy to execute (default: sma)"
     )
@@ -58,6 +59,8 @@ def parse_args():
     parser.add_argument("--macd-fast", type=int, default=12, help="MACD Fast EMA window (default: 12)")
     parser.add_argument("--macd-slow", type=int, default=26, help="MACD Slow EMA window (default: 26)")
     parser.add_argument("--macd-signal", type=int, default=9, help="MACD Signal window (default: 9)")
+    parser.add_argument("--gp-json", type=str, default="champion_gp.json", help="Path to genetic programming strategy JSON file")
+
 
     # Sizing settings
     parser.add_argument(
@@ -77,6 +80,8 @@ def parse_args():
     parser.add_argument("--capital", type=float, default=100000.0, help="Initial portfolio cash (default: 100000.0)")
     parser.add_argument("--slippage-pct", type=float, default=0.0002, help="Slippage percentage rate (default: 0.0002, 2 bps)")
     parser.add_argument("--commission-pct", type=float, default=0.0005, help="Commission percentage rate (default: 0.0005, 5 bps)")
+    parser.add_argument("--commission-per-share", type=float, default=0.0, help="Commission per traded share in USD (default: 0.0)")
+    parser.add_argument("--min-trade-shares", type=float, default=1e-8, help="Minimum trade size in shares (default: 1e-8)")
     parser.add_argument(
         "--timing",
         choices=["next_open", "next_close"],
@@ -280,6 +285,12 @@ def main():
             "signal_period": args.macd_signal,
             "long_only": not args.short
         }
+    elif args.strategy == "gp":
+        strategy_class = GeneticProgrammingStrategy
+        strategy_params = {
+            "json_path": args.gp_json
+        }
+
 
     # 3. Instantiate position sizer
     if args.sizer == "fixed_shares":
@@ -290,7 +301,11 @@ def main():
         sizer = VolatilityBasedSizer(target_risk_per_trade=float(args.sizer_val), window=20)
 
     # 4. Instantiate execution cost model
-    exec_model = ExecutionModel(slippage_pct=args.slippage_pct, commission_pct=args.commission_pct)
+    exec_model = ExecutionModel(
+        slippage_pct=args.slippage_pct, 
+        commission_pct=args.commission_pct,
+        commission_per_share=args.commission_per_share
+    )
 
     # 5. Initialize and run Event-Driven engine
     strategy = strategy_class(**strategy_params)
@@ -299,7 +314,8 @@ def main():
         position_sizer=sizer,
         execution_model=exec_model,
         initial_capital=args.capital,
-        execution_timing=args.timing
+        execution_timing=args.timing,
+        min_trade_shares=args.min_trade_shares
     )
 
     print(f"\nRunning backtest with strategy: '{args.strategy}'...")

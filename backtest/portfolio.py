@@ -84,8 +84,12 @@ class Portfolio:
     @property
     def daily_returns(self) -> pd.Series:
         """Returns the daily percentage change of the equity curve."""
-        # Pandas/NumPy Concept: Vectorized Arithmetic (pct_change) and Handling Missing Data (fillna)
+        unique_dates = np.unique(self.equity_curve.index.date)
+        if len(unique_dates) < len(self.equity_curve):
+            # Intraday data: resample to daily ending values
+            return self.equity_curve.resample("D").last().ffill().pct_change().fillna(0.0)
         return self.equity_curve.pct_change().fillna(0.0)
+
 
     @property
     def annualized_volatility(self) -> float:

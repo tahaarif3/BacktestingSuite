@@ -17,7 +17,8 @@ class EventDrivenEngine:
         position_sizer: IPositionSizer,
         execution_model: IExecutionModel,
         initial_capital: float = 100000.0,
-        execution_timing: str = "next_open"
+        execution_timing: str = "next_open",
+        min_trade_shares: float = 1e-8
     ):
         """
         Args:
@@ -27,22 +28,25 @@ class EventDrivenEngine:
             initial_capital: Starting cash balance.
             execution_timing: "next_open" to trade at the next bar's Open,
                               "next_close" to trade at the next bar's Close.
+            min_trade_shares: Minimum change in position shares required to execute a trade.
         """
         self.strategy = strategy
         self.position_sizer = position_sizer
         self.execution_model = execution_model
         self.initial_capital = initial_capital
+        self.min_trade_shares = min_trade_shares
         
         if execution_timing not in ("next_open", "next_close"):
             raise ValueError("execution_timing must be either 'next_open' or 'next_close'.")
         self.execution_timing = execution_timing
 
-    def run(self, data: List[Bar]) -> Portfolio:
+    def run(self, data: List[Bar], signals: List[float] = None) -> Portfolio:
         """
         Executes the backtest chronologically bar-by-bar (simulating event loops).
         
         Args:
             data: List of clean domain Bar objects.
+            signals: Optional list of pre-calculated signals. If None, strategy will generate them.
             
         Returns:
             Portfolio: Portfolio instance containing the backtest results.
@@ -50,8 +54,9 @@ class EventDrivenEngine:
         if not data:
             raise ValueError("Cannot run backtest on empty data.")
 
-        # 1. Generate signals using the strategy
-        signals = self.strategy.generate_signals(data)
+        # 1. Generate signals using the strategy if not provided
+        if signals is None:
+            signals = self.strategy.generate_signals(data)
 
         if len(signals) != len(data):
             raise ValueError("Strategy signals length does not match data length.")
@@ -101,6 +106,11 @@ class EventDrivenEngine:
             # 4. Order Execution & Slippage/Commissions
             # Calculate trade shares (changes in active position)
             trade_shares = target_shares - position
+
+            # Enforce minimum trade shares threshold
+            if abs(trade_shares) < self.min_trade_shares:
+                trade_shares = 0.0
+                target_shares = position
 
             # Determine execution price based on timing configuration
             current_bar = data[t]
