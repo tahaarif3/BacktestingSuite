@@ -79,9 +79,15 @@ def main():
     print("\nRunning backtest...")
     portfolio = engine.run(bars)
     
-    # 6. Display performance metrics using the Presentation Layer (PortfolioPresenter)
-    summary = portfolio.get_summary()
-    print(PortfolioPresenter.format_summary(summary))
+    # 6. Extract trades and display advanced performance metrics using the Presentation Layer
+    from analytics.metrics import PerformanceMetrics, extract_trades
+    from analytics.plots import generate_backtest_report_plots
+
+    trades_df = extract_trades(portfolio.data)
+    advanced_summary = PerformanceMetrics.get_advanced_summary(portfolio.data, trades_df)
+    
+    print(PortfolioPresenter.format_summary(advanced_summary))
+    print(PortfolioPresenter.format_trade_log(trades_df, limit=10))
             
     # Check end of the series
     res_df = portfolio.data
@@ -89,6 +95,23 @@ def main():
     columns_to_show = ["close", "signal", "target_position", "active_position", "trades", "commission_cost", "cash", "equity"]
     print(res_df[columns_to_show].tail(5))
 
+    # Save Trade Log and generate plots
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    trade_log_path = os.path.join(output_dir, "trade_log.csv")
+    trades_df.to_csv(trade_log_path, index=False)
+    print(f"\nTrade log successfully exported to: {trade_log_path}")
+
+    # Generate benchmark and plots
+    initial_capital = portfolio.data["equity"].iloc[0]
+    benchmark_curve = PerformanceMetrics.get_benchmark_equity(portfolio.data["close"], initial_capital)
+    plot_paths = generate_backtest_report_plots(portfolio.data, benchmark_curve, output_dir)
+    print("Diagnostic charts generated and saved:")
+    for chart_name, path in plot_paths.items():
+        print(f"  - {chart_name}: {path}")
+
 
 if __name__ == "__main__":
     main()
+
