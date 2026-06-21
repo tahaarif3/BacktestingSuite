@@ -68,3 +68,5 @@ strat/private_*
 strat/secret/
 strat/private/
 
+# Backtest Outputs
+output/
