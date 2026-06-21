@@ -129,7 +129,7 @@ class DataLoader:
         # Standardize timezone handling if index is timezone-aware
         # If the input dates are timezone naive, localize them to match the index if the index is timezone aware
         tz = df.index.tz
-        
+        # Time series data and indices
         if start_date is not None:
             start_ts = pd.to_datetime(start_date)
             if tz is not None and start_ts.tz is None:

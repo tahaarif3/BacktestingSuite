@@ -71,6 +71,7 @@ def test_cost_deduction(sample_market_data):
     # Expected Commission: 10 * (0.05 + 103.0 * 0.002) = 10 * 0.256 = 2.56 (since 2.56 > min_commission of 1.0)
     # Expected Total Friction: 11.3 + 2.56 = 13.86
     # Expected Cash Flow: - (10 * 103.0) - 13.86 = -1043.86
+    # pytest Concept: using approx() to compare floating point numbers to avoid precision issues
     assert df["slippage_cost"].iloc[1] == pytest.approx(11.3)
     assert df["commission_cost"].iloc[1] == pytest.approx(2.56)
     assert df["cash"].iloc[1] == pytest.approx(10000.0 - 1043.86)

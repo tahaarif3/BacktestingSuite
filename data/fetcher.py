@@ -68,6 +68,7 @@ class DataFetcher:
         print(f"Fetching {symbol} from yfinance (Interval: {interval}, Range: {start} to {end})...")
         
         # yfinance download
+        # yfinance Concept: bulk downloading historical data with auto_adjust=True for split/dividend adjustments
         # auto_adjust=True makes sure Close is adjusted for splits & dividends
         df = yf.download(
             tickers=symbol,
@@ -136,6 +137,7 @@ class DataFetcher:
         start_dt = pd.to_datetime(start)
         end_dt = pd.to_datetime(end)
         
+        # Alpaca Concept: creating a structured request object with mapped timeframes (e.g. TimeFrame.Day)
         request_params = StockBarsRequest(
             symbol_or_symbols=symbol,
             timeframe=timeframe,

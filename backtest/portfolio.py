@@ -43,6 +43,7 @@ class Portfolio:
     @property
     def daily_returns(self) -> pd.Series:
         """Returns the daily percentage change of the equity curve."""
+        # Pandas/NumPy Concept: Vectorized Arithmetic (pct_change) and Handling Missing Data (fillna)
         return self.equity_curve.pct_change().fillna(0.0)
 
     @property
@@ -51,6 +52,7 @@ class Portfolio:
         returns = self.daily_returns
         if len(returns) < 2:
             return 0.0
+        # NumPy Concept: np.sqrt performs element-wise mathematical square root calculation
         return returns.std() * np.sqrt(252)
 
     @property
@@ -61,6 +63,7 @@ class Portfolio:
         if std == 0 or len(returns) < 2:
             return 0.0
         # Sharpe ratio = (mean / std) * sqrt(252)
+        # NumPy Concept: np.sqrt performs element-wise mathematical square root calculation
         return (returns.mean() / std) * np.sqrt(252)
 
     @property
@@ -68,7 +71,9 @@ class Portfolio:
         """Calculates the maximum peak-to-trough drawdown (returns as negative decimal)."""
         if self.equity_curve.empty:
             return 0.0
+        # Pandas/NumPy Concept: Cumulative and Rolling Calculations (cummax)
         peaks = self.equity_curve.cummax()
+        # Pandas/NumPy Concept: Vectorized Arithmetic & Operations
         drawdowns = (self.equity_curve - peaks) / peaks
         return drawdowns.min()
 

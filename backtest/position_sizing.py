@@ -58,15 +58,18 @@ class FixedFractionalSizer(BasePositionSizer):
         signals = data["signal"]
         prices = data["close"]
 
+        # Pandas/NumPy Concept: Vectorized Arithmetic (pct_change) and Handling Missing Data (fillna)
         # Calculate daily asset returns
         price_returns = prices.pct_change().fillna(0)
 
+        # Pandas/NumPy Concept: Time-Shifting & Avoiding Look-Ahead Bias
         # Shift signals by 1 to reflect active positions for return calculation (prevent look-ahead bias)
         active_signals = signals.shift(1).fillna(0)
 
         # Compute strategy returns based on target allocation
         strat_returns = active_signals * self.fraction * price_returns
 
+        # Pandas/NumPy Concept: Cumulative and Rolling Calculations (cumprod)
         # Compute cumulative growth and estimate rolling equity curve
         cum_growth = (1 + strat_returns).cumprod()
         estimated_equity = self.initial_capital * cum_growth
@@ -116,6 +119,7 @@ class VolatilityBasedSizer(BasePositionSizer):
                 (low - prev_close).abs()
             ], axis=1).max(axis=1)
 
+            # Pandas/NumPy Concept: Cumulative and Rolling Calculations (rolling.mean)
             volatility = tr.rolling(window=self.window).mean()
         else:
             # Fall back to rolling mean of absolute close price daily diffs
@@ -124,6 +128,7 @@ class VolatilityBasedSizer(BasePositionSizer):
         # Handle NaNs and zero values to prevent division by zero errors
         volatility = volatility.ffill().bfill()
         # Replace remaining 0s or NaNs with a default multiplier
+        # NumPy Concept: np.nan represents missing or invalid numerical data
         volatility = volatility.replace(0, np.nan).fillna(1.0)
 
         # Shift volatility by 1 to size today's trade using yesterday's volatility (no look-ahead)

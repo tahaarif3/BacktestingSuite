@@ -44,6 +44,7 @@ class VectorizedEngine:
         if "close" not in data.columns:
             raise ValueError("Input data must contain a 'close' price column.")
 
+        # Pandas/NumPy Concept: Memory Management - Views vs. Copies
         # Copy data to avoid side-effects on original DataFrame
         df = data.copy()
 
@@ -59,10 +60,13 @@ class VectorizedEngine:
         # 2. Determine target position sizes (shares) based on signals
         target_positions = self.position_sizer.size_positions(df)
 
+        # Pandas/NumPy Concept: Time-Shifting & Avoiding Look-Ahead Bias
         # 3. Shift target positions by 1 to prevent Look-Ahead Bias
         # (A signal at day T is executed at the close/open of T+1)
+        # Pandas/NumPy Concept: Handling Missing Data (fillna)
         active_positions = target_positions.shift(1).fillna(0.0)
 
+        # Pandas/NumPy Concept: Vectorized Arithmetic & Operations (diff)
         # 4. Calculate daily changes in position (Turnover)
         # First day trades from 0 to the initial active position
         first_position = active_positions.iloc[0] if not active_positions.empty else 0.0
@@ -73,11 +77,13 @@ class VectorizedEngine:
         commission_cost = self.execution_model.calculate_commission(prices, trades)
         total_transaction_cost = slippage_cost + commission_cost
 
+        # Pandas/NumPy Concept: Cumulative and Rolling Calculations (cumsum)
         # 6. Calculate daily cash flow and cash balance
         # Buying shares (-trades * price) decreases cash; selling (+trades * price) increases cash
         cash_flow = -(trades * prices) - total_transaction_cost
         cash = self.initial_capital + cash_flow.cumsum()
 
+        # Pandas/NumPy Concept: Vectorized Arithmetic & Operations
         # 7. Compute daily holdings value (active shares * current price)
         holdings = active_positions * prices
 

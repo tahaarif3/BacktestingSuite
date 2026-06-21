@@ -40,6 +40,7 @@ class ExecutionModel:
         Returns:
             pd.Series: Series representing slippage cost for each timestamp.
         """
+        # Pandas/NumPy Concept: Vectorized Arithmetic & Operations
         # Slippage cost = |shares| * (slippage_abs + execution_price * slippage_pct)
         return trades.abs() * (self.slippage_abs + prices * self.slippage_pct)
 
@@ -54,11 +55,14 @@ class ExecutionModel:
         Returns:
             pd.Series: Series representing commission cost for each timestamp.
         """
+        # Pandas/NumPy Concept: Vectorized Arithmetic & Operations
         # Base commission = |shares| * (commission_per_share + price * commission_pct)
         base_commission = trades.abs() * (self.commission_per_share + prices * self.commission_pct)
 
         # Enforce minimum commission if trade size is greater than zero
         if self.min_commission > 0:
+            # Pandas/NumPy Concept: Vectorized Conditional Logic
+            # NumPy Concept: np.where performs vectorized conditional logic, and np.maximum computes element-wise maximums
             commission_cost = np.where(
                 trades.abs() > 1e-8,
                 np.maximum(base_commission, self.min_commission),

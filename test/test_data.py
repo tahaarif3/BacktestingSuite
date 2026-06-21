@@ -95,6 +95,7 @@ def test_fetch_yfinance_empty_error(mock_download):
     mock_download.return_value = pd.DataFrame()
     
     fetcher = DataFetcher()
+    # pytest Concept: asserting that a specific exception is raised during a test
     with pytest.raises(ValueError, match="No data returned for ticker SPY from yfinance"):
         fetcher.fetch_yfinance(symbol="SPY", start="2023-01-01", end="2023-01-05")
 
