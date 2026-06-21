@@ -45,3 +45,25 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Sensitive information, credentials, and configuration
+.env*
+*credentials*
+*key*
+*token*
+*.yaml
+*.yml
+config.ini
+secrets/
+.secrets
+
+# Secret and private trading strategies
+*secret*
+*private*
+secret_strats/
+private_strats/
+strat/secret_*
+strat/private_*
+strat/secret/
+strat/private/
+
