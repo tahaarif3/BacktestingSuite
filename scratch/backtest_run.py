@@ -1,56 +1,58 @@
 import os
 import sys
 import pandas as pd
+import numpy as np
 
 # Add project root to python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.dataloader import DataLoader
 from strat.base import BaseStrategy
+from domain.models import Bar
 from backtest.position_sizing import FixedSharesSizer, FixedFractionalSizer, VolatilityBasedSizer
 from backtest.execution import ExecutionModel
-from backtest.vectorized import VectorizedEngine
+from backtest.event_driven import EventDrivenEngine
+from presentation.presenter import PortfolioPresenter
 
 
 class SMACrossoverStrategy(BaseStrategy):
     """
     Simple Moving Average (SMA) Crossover Strategy.
-    Generates a Buy signal (1) when short_window SMA is above long_window SMA,
-    and a Flat/Sell signal (0) otherwise.
+    Generates a Buy signal (1.0) when short_window SMA is above long_window SMA,
+    and a Flat/Sell signal (0.0) otherwise.
+    Conforms to clean domain boundaries.
     """
 
     def __init__(self, short_window: int = 5, long_window: int = 20):
         self.short_window = short_window
         self.long_window = long_window
 
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
-        df = data.copy()
+    def generate_signals(self, bars: list) -> list:
+        # Convert list of Bar objects to a pandas Series to compute moving averages easily
+        closes = pd.Series([b.close for b in bars])
         
         # Calculate moving averages
-        df["sma_short"] = df["close"].rolling(window=self.short_window).mean()
-        df["sma_long"] = df["close"].rolling(window=self.long_window).mean()
+        sma_short = closes.rolling(window=self.short_window).mean()
+        sma_long = closes.rolling(window=self.long_window).mean()
         
-        # Generate raw signal: 1 (Buy) if short SMA > long SMA, else 0 (Flat)
-        # Note: We fill NaN values (which occur during the warm-up period) with 0.
-        df["signal"] = 0
-        df.loc[df["sma_short"] > df["sma_long"], "signal"] = 1
+        # Generate signal: 1.0 if short SMA > long SMA, else 0.0
+        signals_arr = np.where(sma_short > sma_long, 1.0, 0.0)
         
-        return df
+        return [float(sig) for sig in signals_arr]
 
 
 def main():
-    print("=== SPY Vectorized Backtesting Engine Verification ===")
+    print("=== SPY Event-Driven Backtesting Engine Verification ===")
     
-    # 1. Load and clean historical SPY daily data
+    # 1. Load and clean historical SPY daily data using the repository pattern
     data_path = os.path.join("data", "spy_daily_yfinance.parquet")
     if not os.path.exists(data_path):
         print(f"Error: {data_path} not found. Please run scratch/sample_run.py first to fetch SPY data.")
         return
         
     loader = DataLoader()
-    raw_data = loader.load_data(data_path)
-    cleaned_data = loader.clean_data(raw_data)
-    print(f"Loaded {len(cleaned_data)} rows of SPY daily data.")
+    bars = loader.get_bars(data_path)
+    print(f"Loaded {len(bars)} bars of SPY daily data.")
 
     # 2. Instantiate strategy
     strategy = SMACrossoverStrategy(short_window=10, long_window=50)
@@ -65,27 +67,21 @@ def main():
     # 4. Instantiate Position Sizer (let's use Fixed Fractional: invest 50% of capital)
     sizer = FixedFractionalSizer(fraction=0.5, initial_capital=100000.0)
 
-    # 5. Initialize and run the engine
-    engine = VectorizedEngine(
+    # 5. Initialize and run the engine (using EventDrivenEngine executing at Next Open)
+    engine = EventDrivenEngine(
         strategy=strategy,
         position_sizer=sizer,
         execution_model=execution_model,
-        initial_capital=100000.0
+        initial_capital=100000.0,
+        execution_timing="next_open"
     )
     
     print("\nRunning backtest...")
-    portfolio = engine.run(cleaned_data)
+    portfolio = engine.run(bars)
     
-    # 6. Display performance metrics
+    # 6. Display performance metrics using the Presentation Layer (PortfolioPresenter)
     summary = portfolio.get_summary()
-    print("\n--- Performance Summary ---")
-    for metric, value in summary.items():
-        if "Return" in metric or "Volatility" in metric or "Drawdown" in metric:
-            print(f"{metric}: {value * 100:.2f}%")
-        elif "Equity" in metric:
-            print(f"{metric}: ${value:,.2f}")
-        else:
-            print(f"{metric}: {value:.4f}")
+    print(PortfolioPresenter.format_summary(summary))
             
     # Check end of the series
     res_df = portfolio.data

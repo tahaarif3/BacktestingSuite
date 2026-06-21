@@ -1,9 +1,11 @@
 import pandas as pd
-from typing import Optional, Union
+from typing import Optional, Union, List
+from domain.interfaces import IMarketDataRepository
+from domain.models import Bar
 
 
 # DataLoader Module for loading, cleaning, and preprocessing cached market data
-class DataLoader:
+class DataLoader(IMarketDataRepository):
     """
     Loads and cleans historical data from cached Parquet files.
     """
@@ -147,3 +149,23 @@ class DataLoader:
             df = df[df.index <= end_ts]
             
         return df
+
+    def get_bars(self, filepath: Optional[str] = None) -> List[Bar]:
+        """
+        Loads, cleans, and converts cached Parquet data to domain Bar objects.
+        Conforms to IMarketDataRepository.
+        """
+        df = self.load_data(filepath)
+        cleaned_df = self.clean_data(df)
+        
+        bars = []
+        for t, r in cleaned_df.iterrows():
+            bars.append(Bar(
+                timestamp=t,
+                open=float(r["open"]),
+                high=float(r["high"]),
+                low=float(r["low"]),
+                close=float(r["close"]),
+                volume=float(r["volume"]) if "volume" in cleaned_df.columns else 0.0
+            ))
+        return bars

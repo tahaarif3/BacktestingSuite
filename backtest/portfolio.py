@@ -1,26 +1,67 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, List
+from domain.models import Bar
 
 
 class Portfolio:
     """
-    Encapsulates the results of a vectorized backtest simulation.
+    Encapsulates the results of a backtest simulation.
     Tracks cash, positions, and equity curve over time, and computes key summary statistics.
     """
 
-    def __init__(self, data: pd.DataFrame, cash: pd.Series, positions: pd.Series, equity_curve: pd.Series):
+    def __init__(
+        self,
+        data: Any,
+        cash: Any = None,
+        positions: Any = None,
+        equity_curve: Any = None,
+        trades: Any = None,
+        slippage_cost: Any = None,
+        commission_cost: Any = None,
+        target_positions: Any = None,
+        signals: Any = None
+    ):
         """
         Args:
-            data: The full DataFrame containing the simulation results.
-            cash: Series tracking cash balance over time.
-            positions: Series tracking number of shares held over time.
-            equity_curve: Series tracking total marked-to-market portfolio value.
+            data: DataFrame (vectorized) or List[Bar] (event-driven).
+            cash: pd.Series or List[float].
+            positions: pd.Series or List[float].
+            equity_curve: pd.Series or List[float].
         """
-        self.data = data
-        self.cash = cash
-        self.positions = positions
-        self.equity_curve = equity_curve
+        if isinstance(data, pd.DataFrame):
+            self.data = data
+            self.cash = cash
+            self.positions = positions
+            self.equity_curve = equity_curve
+        else:
+            # We assume data is List[Bar] from clean event-driven engine
+            bars: List[Bar] = data
+            timestamps = [b.timestamp for b in bars]
+            
+            self.cash = pd.Series(cash, index=timestamps)
+            self.positions = pd.Series(positions, index=timestamps)
+            self.equity_curve = pd.Series(equity_curve, index=timestamps)
+            
+            # Construct DataFrame internally
+            df = pd.DataFrame({
+                "open": [b.open for b in bars],
+                "high": [b.high for b in bars],
+                "low": [b.low for b in bars],
+                "close": [b.close for b in bars],
+                "volume": [b.volume for b in bars],
+                "signal": signals if signals is not None else [0.0] * len(bars),
+                "target_position": target_positions,
+                "active_position": positions,
+                "trades": trades,
+                "slippage_cost": slippage_cost,
+                "commission_cost": commission_cost,
+                "cash": cash,
+                "equity": equity_curve
+            }, index=timestamps)
+            df.index.name = "timestamp"
+            self.data = df
+
 
     @property
     def total_return(self) -> float:

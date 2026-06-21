@@ -1,21 +1,24 @@
 from abc import ABC, abstractmethod
-import pandas as pd
+from typing import List
+from domain.interfaces import IStrategy
+from domain.models import Bar
 
 
-class BaseStrategy(ABC):
+class BaseStrategy(IStrategy, ABC):
     """
     Abstract Base Class for defining trading strategies.
     """
 
     @abstractmethod
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+    def generate_signals(self, bars: List[Bar]) -> List[float]:
         """
-        Takes cleaned market data and returns a DataFrame containing a 'signal' column.
+        Takes a list of clean domain Bar objects and returns a list of float signals.
         
         Args:
-            data: DataFrame containing historical market data (OHLCV).
+            bars: List of Bar domain entities.
             
         Returns:
-            pd.DataFrame: The DataFrame with an added 'signal' column (1 for Buy, -1 for Sell, 0 for Flat).
+            List[float]: A list of signals aligned with the bars (1.0 for Buy, -1.0 for Sell, 0.0 for Flat).
         """
         pass
+

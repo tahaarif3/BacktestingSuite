@@ -1,10 +1,12 @@
 import pandas as pd
 import numpy as np
+from domain.interfaces import IExecutionModel
 
 
-class ExecutionModel:
+class ExecutionModel(IExecutionModel):
     """
-    Simulates transaction costs (slippage and commissions) for order execution in a vectorized manner.
+    Simulates transaction costs (slippage and commissions) for order execution.
+    Conforms to the domain IExecutionModel interface.
     """
 
     def __init__(
@@ -29,45 +31,37 @@ class ExecutionModel:
         self.commission_per_share = commission_per_share
         self.min_commission = min_commission
 
-    def calculate_slippage(self, prices: pd.Series, trades: pd.Series) -> pd.Series:
+    def calculate_slippage(self, price: float, shares: float) -> float:
         """
-        Calculates the total slippage cost for each trade.
-        
-        Args:
-            prices: Series of asset closing or execution prices.
-            trades: Series of traded shares (positive for buy, negative for sell).
-            
-        Returns:
-            pd.Series: Series representing slippage cost for each timestamp.
+        Calculates the total slippage cost for a trade.
+        Supports both scalar float and pandas Series/numpy arrays.
         """
-        # Pandas/NumPy Concept: Vectorized Arithmetic & Operations
-        # Slippage cost = |shares| * (slippage_abs + execution_price * slippage_pct)
-        return trades.abs() * (self.slippage_abs + prices * self.slippage_pct)
+        return abs(shares) * (self.slippage_abs + price * self.slippage_pct)
 
-    def calculate_commission(self, prices: pd.Series, trades: pd.Series) -> pd.Series:
+    def calculate_commission(self, price: float, shares: float) -> float:
         """
-        Calculates the total commission cost for each trade, enforcing minimum commissions.
-        
-        Args:
-            prices: Series of asset closing or execution prices.
-            trades: Series of traded shares.
-            
-        Returns:
-            pd.Series: Series representing commission cost for each timestamp.
+        Calculates the total commission cost for a trade, enforcing minimum commissions.
+        Supports both scalar float and pandas Series/numpy arrays.
         """
-        # Pandas/NumPy Concept: Vectorized Arithmetic & Operations
-        # Base commission = |shares| * (commission_per_share + price * commission_pct)
-        base_commission = trades.abs() * (self.commission_per_share + prices * self.commission_pct)
+        if isinstance(price, (pd.Series, np.ndarray)):
+            # Vectorized calculation
+            base_commission = abs(shares) * (self.commission_per_share + price * self.commission_pct)
+            if self.min_commission > 0:
+                commission_cost = np.where(
+                    abs(shares) > 1e-8,
+                    np.maximum(base_commission, self.min_commission),
+                    0.0
+                )
+                if isinstance(shares, pd.Series):
+                    return pd.Series(commission_cost, index=shares.index)
+                return commission_cost
+            return base_commission
+        else:
+            # Scalar calculation
+            base_commission = abs(shares) * (self.commission_per_share + price * self.commission_pct)
+            if self.min_commission > 0:
+                if abs(shares) > 1e-8:
+                    return float(max(base_commission, self.min_commission))
+                return 0.0
+            return float(base_commission)
 
-        # Enforce minimum commission if trade size is greater than zero
-        if self.min_commission > 0:
-            # Pandas/NumPy Concept: Vectorized Conditional Logic
-            # NumPy Concept: np.where performs vectorized conditional logic, and np.maximum computes element-wise maximums
-            commission_cost = np.where(
-                trades.abs() > 1e-8,
-                np.maximum(base_commission, self.min_commission),
-                0.0
-            )
-            return pd.Series(commission_cost, index=trades.index)
-
-        return base_commission

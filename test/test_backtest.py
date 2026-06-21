@@ -1,10 +1,11 @@
 import pytest
 import pandas as pd
 import numpy as np
+from domain.models import Bar
 from strat.base import BaseStrategy
 from backtest.position_sizing import FixedSharesSizer, FixedFractionalSizer, VolatilityBasedSizer
 from backtest.execution import ExecutionModel
-from backtest.vectorized import VectorizedEngine
+from backtest.event_driven import EventDrivenEngine
 
 
 class DummyStrategy(BaseStrategy):
@@ -12,10 +13,8 @@ class DummyStrategy(BaseStrategy):
     def __init__(self, signals: list):
         self.signals = signals
 
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
-        df = data.copy()
-        df["signal"] = self.signals
-        return df
+    def generate_signals(self, bars: list) -> list:
+        return self.signals
 
 
 @pytest.fixture
@@ -30,26 +29,46 @@ def sample_market_data():
     }, index=dates)
 
 
-def test_look_ahead_bias_prevention(sample_market_data):
-    """Verify that target positions are shifted by 1 to prevent look-ahead bias."""
+@pytest.fixture
+def sample_market_bars(sample_market_data):
+    """Converts the sample market data DataFrame to a list of domain Bar objects."""
+    bars = []
+    for t, r in sample_market_data.iterrows():
+        bars.append(Bar(
+            timestamp=t,
+            open=float(r["open"]),
+            high=float(r["high"]),
+            low=float(r["low"]),
+            close=float(r["close"]),
+            volume=0.0
+        ))
+    return bars
+
+
+def test_look_ahead_bias_prevention(sample_market_bars):
+    """Verify that target positions are computed chronologically and executed on the next bar's Open."""
     signals = [1, 0, -1, 1, 0]
     strategy = DummyStrategy(signals)
     sizer = FixedSharesSizer(fixed_shares=10)
     exec_model = ExecutionModel()
-    engine = VectorizedEngine(strategy, sizer, exec_model, initial_capital=10000)
+    engine = EventDrivenEngine(strategy, sizer, exec_model, initial_capital=10000, execution_timing="next_open")
 
-    portfolio = engine.run(sample_market_data)
+    portfolio = engine.run(sample_market_bars)
     df = portfolio.data
 
-    # Expected target positions: signal * 10 = [10, 0, -10, 10, 0]
-    # Expected active positions (shifted by 1): [0, 10, 0, -10, 10]
-    assert list(df["target_position"]) == [10.0, 0.0, -10.0, 10.0, 0.0]
+    # Expected target positions at t (sized using signals at t-1):
+    # - t=0: no prev signal -> target = 0
+    # - t=1: prev signal=1 -> target = 10
+    # - t=2: prev signal=0 -> target = 0
+    # - t=3: prev signal=-1 -> target = -10
+    # - t=4: prev signal=1 -> target = 10
+    assert list(df["target_position"]) == [0.0, 10.0, 0.0, -10.0, 10.0]
     assert list(df["active_position"]) == [0.0, 10.0, 0.0, -10.0, 10.0]
 
 
-def test_cost_deduction(sample_market_data):
-    """Verify slippage and commission calculations are correctly computed and subtracted from cash."""
-    signals = [1, 0, -1, 1, 0]  # Active positions: [0, 10, 0, -10, 10], Trades: [0, 10, -10, -10, 20]
+def test_cost_deduction(sample_market_bars):
+    """Verify slippage and commission calculations are correctly computed and subtracted from cash in the event loop."""
+    signals = [1, 0, -1, 1, 0]
     strategy = DummyStrategy(signals)
     sizer = FixedSharesSizer(fixed_shares=10)
     
@@ -62,19 +81,18 @@ def test_cost_deduction(sample_market_data):
         min_commission=1.0
     )
     
-    engine = VectorizedEngine(strategy, sizer, exec_model, initial_capital=10000.0)
-    portfolio = engine.run(sample_market_data)
+    engine = EventDrivenEngine(strategy, sizer, exec_model, initial_capital=10000.0, execution_timing="next_open")
+    portfolio = engine.run(sample_market_bars)
     df = portfolio.data
     
-    # On day 1 (index 1): Price = 103.0, trade size = +10 shares (buy)
-    # Expected Slippage: 10 * (0.1 + 103.0 * 0.01) = 10 * 1.13 = 11.3
-    # Expected Commission: 10 * (0.05 + 103.0 * 0.002) = 10 * 0.256 = 2.56 (since 2.56 > min_commission of 1.0)
-    # Expected Total Friction: 11.3 + 2.56 = 13.86
-    # Expected Cash Flow: - (10 * 103.0) - 13.86 = -1043.86
-    # pytest Concept: using approx() to compare floating point numbers to avoid precision issues
-    assert df["slippage_cost"].iloc[1] == pytest.approx(11.3)
-    assert df["commission_cost"].iloc[1] == pytest.approx(2.56)
-    assert df["cash"].iloc[1] == pytest.approx(10000.0 - 1043.86)
+    # On day 1 (index 1): execution price is Day 1 Open = 102.0, trade size = +10 shares (buy)
+    # Expected Slippage: 10 * (0.1 + 102.0 * 0.01) = 10 * 1.12 = 11.2
+    # Expected Commission: 10 * (0.05 + 102.0 * 0.002) = 10 * 0.254 = 2.54 (since 2.54 > min_commission of 1.0)
+    # Expected Total Friction: 11.2 + 2.54 = 13.74
+    # Expected Cash Flow: - (10 * 102.0) - 13.74 = -1033.74
+    assert df["slippage_cost"].iloc[1] == pytest.approx(11.2)
+    assert df["commission_cost"].iloc[1] == pytest.approx(2.54)
+    assert df["cash"].iloc[1] == pytest.approx(10000.0 - 1033.74)
 
 
 def test_fixed_shares_sizer(sample_market_data):
@@ -115,37 +133,31 @@ def test_volatility_based_sizer(sample_market_data):
     sizer = VolatilityBasedSizer(target_risk_per_trade=500.0, window=2)
     target_pos = sizer.size_positions(df_input)
     
-    # Volatility uses rolling window of 2 (first 2 entries will be backfilled/averaged)
-    # The sizer shifts volatility by 1 so no lookahead bias occurs
-    # Asserting that sizer runs and returns reasonable values
     assert not target_pos.empty
     assert len(target_pos) == 5
     assert (target_pos.iloc[1:] != 0).all()
 
 
-def test_portfolio_statistics(sample_market_data):
-    """Verify correctness of Portfolio stats (total return, volatility, max drawdown)."""
+def test_portfolio_statistics(sample_market_bars):
+    """Verify correctness of Portfolio stats (total return, volatility, max drawdown) under EventDrivenEngine."""
     strategy = DummyStrategy([1, 1, 1, 1, 1])
     sizer = FixedSharesSizer(fixed_shares=10)
     exec_model = ExecutionModel()
-    engine = VectorizedEngine(strategy, sizer, exec_model, initial_capital=10000.0)
+    engine = EventDrivenEngine(strategy, sizer, exec_model, initial_capital=10000.0, execution_timing="next_open")
     
-    portfolio = engine.run(sample_market_data)
+    portfolio = engine.run(sample_market_bars)
     
     # Equity curve values:
-    # cash = 10000 - (10 * 103) = 8970.0 (trade executed day 1)
-    # holdings value:
-    # Day 0: cash = 10000.0, holdings = 0 * 101.0 = 0.0, equity = 10000.0
-    # Day 1: cash = 8970.0, holdings = 10 * 103.0 = 1030.0, equity = 10000.0
-    # Day 2: cash = 8970.0, holdings = 10 * 101.0 = 1010.0, equity = 9980.0
-    # Day 3: cash = 8970.0, holdings = 10 * 105.0 = 1050.0, equity = 10020.0
-    # Day 4: cash = 8970.0, holdings = 10 * 109.0 = 1090.0, equity = 10060.0
-    assert list(portfolio.equity_curve) == [10000.0, 10000.0, 9980.0, 10020.0, 10060.0]
+    # Day 0: cash = 10000.0, holdings = 0, equity = 10000.0
+    # Day 1: trade executed at day 1 open (102.0). cash = 10000 - 10 * 102 = 8980.0. active = 10. close = 103.0. equity = 8980 + 10 * 103 = 10010.0.
+    # Day 2: trade = 0. cash = 8980.0. active = 10. close = 101.0. equity = 8980 + 10 * 101 = 9990.0.
+    # Day 3: trade = 0. cash = 8980.0. active = 10. close = 105.0. equity = 8980 + 10 * 105 = 10030.0.
+    # Day 4: trade = 0. cash = 8980.0. active = 10. close = 109.0. equity = 8980 + 10 * 109 = 10070.0.
+    assert list(portfolio.equity_curve) == [10000.0, 10010.0, 9990.0, 10030.0, 10070.0]
     
-    # Total return: (10060.0 - 10000.0) / 10000.0 = 0.006 (0.6%)
-    assert portfolio.total_return == pytest.approx(0.006)
+    # Total return: (10070.0 - 10000.0) / 10000.0 = 0.007 (0.7%)
+    assert portfolio.total_return == pytest.approx(0.007)
     
-    # Peaks: [10000, 10000, 10000, 10020, 10060]
-    # Drawdowns: [0, 0, (9980-10000)/10000 = -0.002, 0, 0]
-    # Max Drawdown: -0.002 (-0.2%)
-    assert portfolio.max_drawdown == pytest.approx(-0.002)
+    # Peaks: [10000, 10010, 10010, 10030, 10070]
+    # Drawdowns: [0, 0, (9990 - 10010) / 10010 = -20/10010 = -0.001998001998...]
+    assert portfolio.max_drawdown == pytest.approx(-20.0 / 10010.0)
