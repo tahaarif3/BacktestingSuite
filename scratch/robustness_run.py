@@ -137,7 +137,8 @@ def main():
     full_exec = ExecutionModel(slippage_pct=0.0002, commission_pct=0.0005)
     full_engine = EventDrivenEngine(full_strat, full_sizer, full_exec, 100000.0)
     full_portfolio = full_engine.run(bars)
-    full_trades = extract_trades(full_portfolio.data)
+    full_trades = extract_trades(full_portfolio.data, "next_open")
+
     
     print(f"Running Monte Carlo trade shuffling on {len(full_trades)} trades...")
     mc_res = MonteCarloSimulator.simulate_trade_shuffling(

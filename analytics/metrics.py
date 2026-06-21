@@ -104,7 +104,7 @@ class PerformanceMetrics:
         }
 
 
-def extract_trades(portfolio_df: pd.DataFrame) -> pd.DataFrame:
+def extract_trades(portfolio_df: pd.DataFrame, execution_timing: str = "next_open") -> pd.DataFrame:
     """
     Parses chronological transaction logs and reconstructs discrete round-trip trades
     using a weighted average cost basis state machine.
@@ -113,6 +113,17 @@ def extract_trades(portfolio_df: pd.DataFrame) -> pd.DataFrame:
 
     # Determine trade execution prices
     exec_prices = df["open"] if "open" in df.columns else df["close"]
+
+    # Helper to adjust midnight timestamps to market hours for daily bars
+    def adjust_time(ts, timing):
+        if ts is None:
+            return None
+        if ts.hour == 0 and ts.minute == 0:
+            if timing == "next_open":
+                return ts.replace(hour=9, minute=30)
+            else:
+                return ts.replace(hour=16, minute=0)
+        return ts
 
     position = 0.0
     avg_entry_price = 0.0
@@ -151,8 +162,8 @@ def extract_trades(portfolio_df: pd.DataFrame) -> pd.DataFrame:
             pnl_pct = pnl_usd / cost_basis if cost_basis > 0 else 0.0
 
             closed_trades.append({
-                "entry_time": entry_time,
-                "exit_time": t,
+                "entry_time": adjust_time(entry_time, execution_timing),
+                "exit_time": adjust_time(t, execution_timing),
                 "direction": "Long" if position > 0 else "Short",
                 "size": abs(q_closed),
                 "entry_price": avg_entry_price,
@@ -191,8 +202,8 @@ def extract_trades(portfolio_df: pd.DataFrame) -> pd.DataFrame:
         pnl_pct = pnl_usd / cost_basis if cost_basis > 0 else 0.0
 
         closed_trades.append({
-            "entry_time": entry_time,
-            "exit_time": last_idx,
+            "entry_time": adjust_time(entry_time, execution_timing),
+            "exit_time": adjust_time(last_idx, execution_timing),
             "direction": "Long" if position > 0 else "Short",
             "size": abs(position),
             "entry_price": avg_entry_price,
@@ -203,3 +214,4 @@ def extract_trades(portfolio_df: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(closed_trades)
+

@@ -306,7 +306,8 @@ def main():
     portfolio = engine.run(bars)
     
     # 6. Extract Trades & Compile Performance Analytics
-    trades_df = extract_trades(portfolio.data)
+    trades_df = extract_trades(portfolio.data, args.timing)
+
     summary = PerformanceMetrics.get_advanced_summary(portfolio.data, trades_df)
 
     # 7. Print Terminal Performance Outputs

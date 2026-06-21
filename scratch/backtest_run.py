@@ -83,7 +83,8 @@ def main():
     from analytics.metrics import PerformanceMetrics, extract_trades
     from analytics.plots import generate_backtest_report_plots
 
-    trades_df = extract_trades(portfolio.data)
+    trades_df = extract_trades(portfolio.data, "next_open")
+
     advanced_summary = PerformanceMetrics.get_advanced_summary(portfolio.data, trades_df)
     
     print(PortfolioPresenter.format_summary(advanced_summary))
