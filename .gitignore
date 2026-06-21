@@ -58,6 +58,7 @@ secrets/
 .secrets
 
 # Secret and private trading strategies
+strat/
 *secret*
 *private*
 secret_strats/
