@@ -20,6 +20,7 @@ The suite is engineered around Clean Architecture principles to separate core tr
   * **Monte Carlo Simulations**: permutates trade sequence order to model Probability of Ruin and Drawdown Value-at-Risk (VaR).
   * **Cost Sensitivity Grid**: Maps performance decay across varying slippage and commission rates.
 * **Automated HTML Reporting**: Exports self-contained, beautifully styled slaty-modern dashboard HTML files embedding base64 encoded diagnostic charts (Equity, Drawdown, Rolling Returns) and trade logs.
+* **Interactive Desktop App**: An Electron + React GUI (`desktop/`) over a FastAPI backend that imports the engine directly. Configure and run backtests, fetch data by ticker (yfinance), and explore an interactive dashboard, the robustness suite, and multi-run comparisons — all in one window. See [desktop/README.md](desktop/README.md).
 
 ---
 
@@ -47,6 +48,10 @@ c:\Users\bigbo\Spy_Backtest
 │   ├── optimization.py    # Grid Search, Train-Test split, Walk-Forward Analysis (WFA)
 │   ├── monte_carlo.py     # Trade shuffling sequence risk and ruin simulator
 │   └── sensitivity.py     # Transaction cost sensitivity grid and heatmap
+├── desktop               # Interactive desktop app (see desktop/README.md)
+│   ├── backend           # FastAPI service importing the engine directly
+│   └── frontend          # Electron + React + Vite + TS UI (Plotly charts)
+├── strategy_registry.py  # Single source of truth for strategies, params, sizers (shared by CLI + GUI)
 ├── test
 │   ├── test_data.py      # Data validation unit tests
 │   ├── test_strategies.py# Trading strategy signal unit tests
@@ -125,9 +130,55 @@ python cli.py --strategy sma --robustness
 
 ---
 
+## 🖥️ Desktop App
+
+An interactive Electron + React desktop app lives in [`desktop/`](desktop/). A Python
+FastAPI backend imports the suite engine directly and is spawned by Electron as a
+local sidecar — no CLI shelling. The UI covers a full config panel, an interactive
+results dashboard (equity, drawdown, rolling returns, trade log), the robustness
+suite (train/test, walk-forward, Monte Carlo, cost-sensitivity heatmap), and
+multi-run comparison. Data can be loaded from local Parquet or fetched by ticker.
+
+### Prerequisites
+- The Python virtualenv above (with `requirements.txt` installed), at the repo root.
+- Node.js 18+ / npm.
+- A working `strat/` package present (see note below).
+
+### Develop
+```powershell
+cd desktop/frontend
+npm install
+npm run dev
+```
+Electron finds a free port, launches the backend with the repo's `.venv` Python,
+waits for `/health`, then opens the window. To run just the backend (for API testing
+or a browser UI), from the repo root:
+```powershell
+.venv\Scripts\python -m desktop.backend.main --port 8765
+```
+
+### Package
+```powershell
+# 1) Build the backend binary (from the repo root)
+.venv\Scripts\pyinstaller desktop/backend/BacktestApiServer.spec
+# 2) Build + package the app (from desktop/frontend)
+npm run dist
+```
+Produces an unpacked app under `desktop/frontend/release/win-unpacked/`. To build a
+Windows NSIS installer instead, enable **Windows Developer Mode** (electron-builder's
+code-signing helper needs symlink privileges) and set `win.target` to `"nsis"` in
+`desktop/frontend/package.json`.
+
+> **Note on `strat/`:** the strategy package and data files are gitignored by design
+> ("private strategies"). The app resolves strategies through `strategy_registry.py`,
+> which imports `strat/` at runtime, so a working `strat/` package must be present.
+> An in-app code editor for authoring custom strategies is planned for a future version.
+
+---
+
 ## 🧪 Running Unit Tests
 
-Run the complete suite of 46 automated unit tests verifying data loaders, strategies, engine mechanics, cost models, sizers, analytics, validation metrics, and reporting:
+Run the automated unit tests verifying data loaders, strategies, engine mechanics, cost models, sizers, analytics, validation metrics, and reporting (47 passing; one Genetic Programming signal test is skipped unless `champion_gp.json` is present):
 
 ```powershell
 pytest
