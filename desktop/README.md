@@ -37,16 +37,21 @@ To run the backend on its own (useful for API testing or a browser-based UI):
 
 The renderer falls back to `http://127.0.0.1:8765` when not launched by Electron.
 
-## Features (v1)
+## Features
 
 - **Configure** (sidebar): data source (local Parquet *or* yfinance ticker fetch),
   strategy + dynamic parameters, sizer, capital, costs, timing, long/short.
 - **Results**: metric cards, equity vs. benchmark, drawdown, rolling returns, trade log.
 - **Robustness**: train/test split, walk-forward, Monte Carlo, cost-sensitivity heatmap.
 - **Compare**: overlaid equity curves + side-by-side metrics for multiple runs.
-
-Custom in-app strategy authoring (code editor) is planned for v2; the shared
-`strategy_registry` at the repo root is the seam that will make it drop-in.
+- **Editor**: in-app Monaco code editor (bundled locally, works offline) for authoring
+  custom strategies. Code is validated on synthetic bars before saving (must compile,
+  contain a concrete `IStrategy` subclass constructible with defaults, and return
+  bar-aligned signals), then written to `user_strategies/` and hot-registered through
+  the shared `strategy_registry` — it appears in the Configure dropdown immediately.
+  Numeric `__init__` defaults become editable fields; a `long_only` parameter enables
+  the shorting toggle. In the packaged app, user strategies live in
+  `%LOCALAPPDATA%/BacktestingSuite/user_strategies`.
 
 ## Package
 

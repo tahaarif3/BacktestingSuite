@@ -42,6 +42,20 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function del<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: "DELETE" });
+  if (!res.ok) {
+    let detail = await res.text();
+    try {
+      detail = JSON.parse(detail).detail ?? detail;
+    } catch {
+      /* keep raw text */
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   baseUrl: BASE,
 
@@ -66,6 +80,21 @@ export const api = {
 
   compare: (runs: BacktestConfig[], labels: string[]) =>
     post<{ runs: CompareRun[] }>("/api/compare", { runs, labels }).then((r) => r.runs),
+
+  listUserStrategies: () =>
+    get<{ files: string[] }>("/api/user-strategies").then((r) => r.files),
+
+  getUserStrategyTemplate: () =>
+    get<{ code: string }>("/api/user-strategies/template").then((r) => r.code),
+
+  getUserStrategy: (name: string) =>
+    get<{ name: string; code: string }>(`/api/user-strategies/${name}`),
+
+  saveUserStrategy: (filename: string, code: string) =>
+    post<{ ok: boolean; registered: string[] }>("/api/user-strategies", { filename, code }),
+
+  deleteUserStrategy: (name: string) =>
+    del<{ ok: boolean; registered: string[] }>(`/api/user-strategies/${name}`),
 
   reportUrl: `${BASE}/api/backtest/report`,
 };

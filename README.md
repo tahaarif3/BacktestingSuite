@@ -139,6 +139,12 @@ results dashboard (equity, drawdown, rolling returns, trade log), the robustness
 suite (train/test, walk-forward, Monte Carlo, cost-sensitivity heatmap), and
 multi-run comparison. Data can be loaded from local Parquet or fetched by ticker.
 
+An **Editor** tab (Monaco, bundled locally) lets you write custom strategies in-app:
+subclass `strat.base.BaseStrategy`, hit *Save & Register*, and the strategy is
+validated on synthetic data, saved to `user_strategies/`, and appears immediately in
+the Configure dropdown for backtesting, robustness checks, and comparison. Numeric
+`__init__` defaults become editable parameter fields automatically.
+
 ### Prerequisites
 - The Python virtualenv above (with `requirements.txt` installed), at the repo root.
 - Node.js 18+ / npm.
@@ -169,10 +175,10 @@ Windows NSIS installer instead, enable **Windows Developer Mode** (electron-buil
 code-signing helper needs symlink privileges) and set `win.target` to `"nsis"` in
 `desktop/frontend/package.json`.
 
-> **Note on `strat/`:** the strategy package and data files are gitignored by design
-> ("private strategies"). The app resolves strategies through `strategy_registry.py`,
-> which imports `strat/` at runtime, so a working `strat/` package must be present.
-> An in-app code editor for authoring custom strategies is planned for a future version.
+> **Note on `strat/`:** the strategy package, `user_strategies/`, and data files are
+> gitignored by design ("private strategies"). The app resolves strategies through
+> `strategy_registry.py`, which imports `strat/` at runtime, so a working `strat/`
+> package must be present.
 
 ---
 

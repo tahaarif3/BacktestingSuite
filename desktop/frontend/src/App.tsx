@@ -13,6 +13,7 @@ import ConfigPanel from "./components/ConfigPanel";
 import ResultsDashboard from "./components/ResultsDashboard";
 import RobustnessPanel from "./components/RobustnessPanel";
 import ComparePanel from "./components/ComparePanel";
+import EditorPanel from "./components/EditorPanel";
 
 const DEFAULT_CONFIG: BacktestConfig = {
   strategy: "sma",
@@ -30,7 +31,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
-type Tab = "results" | "robustness" | "compare";
+type Tab = "results" | "robustness" | "compare" | "editor";
 
 export default function App() {
   const [strategies, setStrategies] = useState<StrategySpec[]>([]);
@@ -132,6 +133,14 @@ export default function App() {
     setCompareRuns([]);
   };
 
+  const onStrategiesChanged = async () => {
+    try {
+      setStrategies(await api.getStrategies());
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   return (
     <div className="app">
       <ConfigPanel
@@ -159,6 +168,9 @@ export default function App() {
             Compare
             {compareRuns.length > 0 && <span className="badge">{compareRuns.length}</span>}
           </div>
+          <div className={`tab ${tab === "editor" ? "active" : ""}`} onClick={() => setTab("editor")}>
+            Editor
+          </div>
         </div>
 
         <div className="content">
@@ -168,6 +180,7 @@ export default function App() {
           {tab === "compare" && (
             <ComparePanel runs={compareRuns} onClear={onClearCompare} onRemove={onRemoveCompare} />
           )}
+          {tab === "editor" && <EditorPanel onStrategiesChanged={onStrategiesChanged} />}
         </div>
       </div>
     </div>

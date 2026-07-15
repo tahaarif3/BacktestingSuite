@@ -48,3 +48,8 @@ class RobustnessRequest(BaseModel):
 class CompareRequest(BaseModel):
     runs: List[BacktestConfig]
     labels: Optional[List[str]] = None
+
+
+class SaveStrategyRequest(BaseModel):
+    filename: str
+    code: str
