@@ -17,14 +17,8 @@ from analytics.metrics import PerformanceMetrics, extract_trades
 from analytics.plots import generate_backtest_report_plots
 from analytics.reports import generate_html_report
 
-# Import strategies
-from strat.buy_and_hold import BuyAndHoldStrategy
-from strat.sma_crossover import SMACrossoverStrategy
-from strat.ema_crossover import EMACrossoverStrategy
-from strat.rsi_mean_reversion import RSIMeanReversionStrategy
-from strat.bollinger_bands import BollingerBandsStrategy
-from strat.macd import MACDStrategy
-from strat.genetic_programming import GeneticProgrammingStrategy
+# Shared strategy/sizer registry (single source of truth for CLI + GUI)
+from strategy_registry import STRATEGIES, build_strategy, build_sizer
 
 
 def parse_args():
@@ -154,16 +148,9 @@ def run_robustness_checks(bars, strategy_class, best_params, initial_capital, si
 
     # 2. Walk-Forward Analysis (WFA)
     print("\n[2/3] Rolling Walk-Forward Analysis...")
-    # Define a default param grid for WFA based on strategy parameters
-    param_grids_mapping = {
-        BuyAndHoldStrategy: {},
-        SMACrossoverStrategy: {"fast_window": [5, 10, 20], "slow_window": [30, 50, 70]},
-        EMACrossoverStrategy: {"fast_window": [5, 10, 20], "slow_window": [30, 50, 70]},
-        RSIMeanReversionStrategy: {"window": [10, 14, 20], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
-        BollingerBandsStrategy: {"window": [15, 20, 25], "num_std": [1.5, 2.0, 2.5]},
-        MACDStrategy: {"fast_period": [10, 12, 15], "slow_period": [22, 26, 30], "signal_period": [7, 9, 11]}
-    }
-    
+    # Default WFA param grids come from the shared registry (keyed by class).
+    param_grids_mapping = {spec.cls: spec.wfa_grid for spec in STRATEGIES.values()}
+
     wfa_grid = param_grids_mapping.get(strategy_class, {})
     if wfa_grid:
         wfa = WalkForwardAnalyzer(
@@ -243,62 +230,35 @@ def main():
     bars = loader.get_bars(args.data_path)
     print(f"Loaded {len(bars)} daily bars from {args.data_path}")
 
-    # 2. Map strategy selection to strategy class and parameters
-    strategy_params = {}
-    if args.strategy == "buy_and_hold":
-        strategy_class = BuyAndHoldStrategy
-    elif args.strategy == "sma":
-        strategy_class = SMACrossoverStrategy
-        strategy_params = {
-            "fast_window": args.fast_window,
-            "slow_window": args.slow_window,
-            "long_only": not args.short
-        }
-    elif args.strategy == "ema":
-        strategy_class = EMACrossoverStrategy
-        strategy_params = {
-            "fast_window": args.fast_window,
-            "slow_window": args.slow_window,
-            "long_only": not args.short
-        }
-    elif args.strategy == "rsi":
-        strategy_class = RSIMeanReversionStrategy
-        strategy_params = {
+    # 2. Map strategy selection to strategy class and parameters (via registry)
+    strategy_values_by_id = {
+        "buy_and_hold": {},
+        "sma": {"fast_window": args.fast_window, "slow_window": args.slow_window},
+        "ema": {"fast_window": args.fast_window, "slow_window": args.slow_window},
+        "rsi": {
             "window": args.rsi_window,
             "oversold": args.rsi_oversold,
             "overbought": args.rsi_overbought,
             "exit_level": args.rsi_exit,
-            "long_only": not args.short
-        }
-    elif args.strategy == "bb":
-        strategy_class = BollingerBandsStrategy
-        strategy_params = {
-            "window": args.bb_window,
-            "num_std": args.bb_std,
-            "long_only": not args.short
-        }
-    elif args.strategy == "macd":
-        strategy_class = MACDStrategy
-        strategy_params = {
-            "fast_period": args.macd_fast,
-            "slow_period": args.macd_slow,
-            "signal_period": args.macd_signal,
-            "long_only": not args.short
-        }
-    elif args.strategy == "gp":
-        strategy_class = GeneticProgrammingStrategy
-        strategy_params = {
-            "json_path": args.gp_json
-        }
-
+        },
+        "bb": {"window": args.bb_window, "num_std": args.bb_std},
+        "macd": {
+            "fast_window": args.macd_fast,
+            "slow_window": args.macd_slow,
+            "signal_window": args.macd_signal,
+        },
+        "gp": {"json_path": args.gp_json},
+    }
+    strategy, strategy_params = build_strategy(
+        args.strategy,
+        strategy_values_by_id.get(args.strategy, {}),
+        allow_short=args.short,
+        gp_json=args.gp_json,
+    )
+    strategy_class = type(strategy)
 
     # 3. Instantiate position sizer
-    if args.sizer == "fixed_shares":
-        sizer = FixedSharesSizer(fixed_shares=int(args.sizer_val))
-    elif args.sizer == "fixed_fractional":
-        sizer = FixedFractionalSizer(fraction=float(args.sizer_val), initial_capital=args.capital)
-    elif args.sizer == "volatility":
-        sizer = VolatilityBasedSizer(target_risk_per_trade=float(args.sizer_val), window=20)
+    sizer = build_sizer(args.sizer, args.sizer_val, args.capital)
 
     # 4. Instantiate execution cost model
     exec_model = ExecutionModel(
@@ -307,8 +267,7 @@ def main():
         commission_per_share=args.commission_per_share
     )
 
-    # 5. Initialize and run Event-Driven engine
-    strategy = strategy_class(**strategy_params)
+    # 5. Initialize and run Event-Driven engine (strategy already built above)
     engine = EventDrivenEngine(
         strategy=strategy,
         position_sizer=sizer,

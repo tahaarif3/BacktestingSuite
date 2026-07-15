@@ -1,0 +1,175 @@
+import { useEffect, useState } from "react";
+import { api } from "./api";
+import type {
+  BacktestConfig,
+  BacktestResult,
+  CompareRun,
+  DataFile,
+  RobustnessResult,
+  SizerSpec,
+  StrategySpec,
+} from "./types";
+import ConfigPanel from "./components/ConfigPanel";
+import ResultsDashboard from "./components/ResultsDashboard";
+import RobustnessPanel from "./components/RobustnessPanel";
+import ComparePanel from "./components/ComparePanel";
+
+const DEFAULT_CONFIG: BacktestConfig = {
+  strategy: "sma",
+  params: { fast_window: 10, slow_window: 50 },
+  short: false,
+  sizer: "fixed_fractional",
+  sizer_value: 0.5,
+  capital: 100000,
+  slippage_pct: 0.0002,
+  commission_pct: 0.0005,
+  commission_per_share: 0,
+  min_trade_shares: 1e-8,
+  timing: "next_open",
+  data: { source: "file", interval: "1d" },
+};
+
+const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
+type Tab = "results" | "robustness" | "compare";
+
+export default function App() {
+  const [strategies, setStrategies] = useState<StrategySpec[]>([]);
+  const [sizers, setSizers] = useState<SizerSpec[]>([]);
+  const [dataFiles, setDataFiles] = useState<DataFile[]>([]);
+
+  const [config, setConfig] = useState<BacktestConfig>(DEFAULT_CONFIG);
+  const [result, setResult] = useState<BacktestResult | null>(null);
+  const [robustness, setRobustness] = useState<RobustnessResult | null>(null);
+  const [compareConfigs, setCompareConfigs] = useState<{ cfg: BacktestConfig; label: string }[]>([]);
+  const [compareRuns, setCompareRuns] = useState<CompareRun[]>([]);
+
+  const [tab, setTab] = useState<Tab>("results");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState({ run: false, robustness: false, fetch: false });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [strats, szs, files] = await Promise.all([
+          api.getStrategies(),
+          api.getSizers(),
+          api.listData(),
+        ]);
+        setStrategies(strats);
+        setSizers(szs);
+        setDataFiles(files);
+      } catch (e) {
+        setError(`Cannot reach backend: ${(e as Error).message}`);
+      }
+    })();
+  }, []);
+
+  const labelFor = (cfg: BacktestConfig): string => {
+    const spec = strategies.find((s) => s.id === cfg.strategy);
+    const params = Object.values(cfg.params).join("/");
+    return `${spec?.name ?? cfg.strategy}${params ? ` ${params}` : ""}${cfg.short ? " (short)" : ""}`;
+  };
+
+  const guard = async (key: keyof typeof busy, fn: () => Promise<void>) => {
+    setBusy((b) => ({ ...b, [key]: true }));
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy((b) => ({ ...b, [key]: false }));
+    }
+  };
+
+  const onRun = () =>
+    guard("run", async () => {
+      const res = await api.runBacktest(config);
+      setResult(res);
+      setTab("results");
+    });
+
+  const onRobustness = () =>
+    guard("robustness", async () => {
+      const res = await api.runRobustness(config, ALL_TESTS);
+      setRobustness(res);
+      setTab("robustness");
+    });
+
+  const onFetch = (ticker: string, start: string, end: string) =>
+    guard("fetch", async () => {
+      const file = await api.fetchTicker(ticker, start, end);
+      setDataFiles(await api.listData());
+      setConfig({ ...config, data: { ...config.data, source: "file", file: file.name } });
+    });
+
+  const refreshCompare = async (items: { cfg: BacktestConfig; label: string }[]) => {
+    if (items.length === 0) {
+      setCompareRuns([]);
+      return;
+    }
+    const runs = await api.compare(items.map((i) => i.cfg), items.map((i) => i.label));
+    setCompareRuns(runs);
+  };
+
+  const onAddCompare = () =>
+    guard("run", async () => {
+      const item = { cfg: { ...config, params: { ...config.params } }, label: labelFor(config) };
+      const next = [...compareConfigs, item];
+      setCompareConfigs(next);
+      await refreshCompare(next);
+      setTab("compare");
+    });
+
+  const onRemoveCompare = (index: number) => {
+    const next = compareConfigs.filter((_, i) => i !== index);
+    setCompareConfigs(next);
+    refreshCompare(next).catch((e) => setError((e as Error).message));
+  };
+
+  const onClearCompare = () => {
+    setCompareConfigs([]);
+    setCompareRuns([]);
+  };
+
+  return (
+    <div className="app">
+      <ConfigPanel
+        strategies={strategies}
+        sizers={sizers}
+        dataFiles={dataFiles}
+        config={config}
+        setConfig={setConfig}
+        onRun={onRun}
+        onAddCompare={onAddCompare}
+        onRobustness={onRobustness}
+        onFetch={onFetch}
+        busy={busy}
+      />
+
+      <div className="main">
+        <div className="tabs">
+          <div className={`tab ${tab === "results" ? "active" : ""}`} onClick={() => setTab("results")}>
+            Results
+          </div>
+          <div className={`tab ${tab === "robustness" ? "active" : ""}`} onClick={() => setTab("robustness")}>
+            Robustness
+          </div>
+          <div className={`tab ${tab === "compare" ? "active" : ""}`} onClick={() => setTab("compare")}>
+            Compare
+            {compareRuns.length > 0 && <span className="badge">{compareRuns.length}</span>}
+          </div>
+        </div>
+
+        <div className="content">
+          {error && <div className="error">{error}</div>}
+          {tab === "results" && <ResultsDashboard result={result} />}
+          {tab === "robustness" && <RobustnessPanel result={robustness} />}
+          {tab === "compare" && (
+            <ComparePanel runs={compareRuns} onClear={onClearCompare} onRemove={onRemoveCompare} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

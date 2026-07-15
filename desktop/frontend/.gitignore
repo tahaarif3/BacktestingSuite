@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+*.log
+
+# The repo-root .gitignore excludes *.json (for private strategy/data files).
+# Re-include the frontend's essential config files, which live here.
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.node.json
