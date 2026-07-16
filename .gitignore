@@ -53,6 +53,9 @@ Thumbs.db
 *token*
 *.yaml
 *.yml
+# ...but keep GitHub issue templates and workflows (they must be committed).
+!.github/**/*.yml
+!.github/**/*.yaml
 config.ini
 secrets/
 .secrets
