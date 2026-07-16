@@ -55,12 +55,34 @@ The renderer falls back to `http://127.0.0.1:8765` when not launched by Electron
 
 ## Package
 
-See `desktop/backend/BacktestApiServer.spec` (PyInstaller) and the `build` block in
-`frontend/package.json` (electron-builder):
+One-shot build (from the repo root):
 
-```bash
+```powershell
+powershell -File desktop\build-installer.ps1
+```
+
+This freezes the backend with PyInstaller (`backend/BacktestApiServer.spec`), then
+runs electron-builder (`build` block in `frontend/package.json`), producing the NSIS
+installer at `frontend/release/BacktestingSuite-Setup-<version>.exe`. Prerequisite:
+**Windows Developer Mode** enabled (electron-builder's code-signing helper needs
+symlink privileges).
+
+Public-safety rules baked into the build:
+
+- The spec never uses `collect_submodules("strat")` — only the explicit
+  `PUBLIC_STRAT_MODULES` allowlist of built-in strategies is bundled. Keep it that way.
+- Post-`Analysis` assertions fail the build if any non-allowlisted `strat.*` module,
+  anything matching `secret`/`private`, `user_strategies`, or an unexpected
+  `.parquet`/`.json` data file ends up in the bundle.
+- The only bundled dataset is `data/spy_daily_yfinance.parquet` (seeded into
+  `%LOCALAPPDATA%\BacktestingSuite\data` on first run).
+
+Manual two-step equivalent:
+
+```powershell
 # 1) build the backend binary (from repo root)
-.venv/Scripts/pyinstaller desktop/backend/BacktestApiServer.spec
+.venv\Scripts\pyinstaller desktop\backend\BacktestApiServer.spec --noconfirm `
+    --distpath desktop\backend\dist --workpath desktop\backend\build
 # 2) build + package the app (from desktop/frontend)
 npm run dist
 ```

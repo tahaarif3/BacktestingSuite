@@ -132,6 +132,21 @@ python cli.py --strategy sma --robustness
 
 ## 🖥️ Desktop App
 
+### Install (Windows)
+
+Download `BacktestingSuite-Setup-<version>.exe` from the
+[latest release](https://github.com/tahaarif3/BacktestingSuite/releases/latest) and run it.
+It installs per-user (no admin rights needed) and creates Start-menu and desktop shortcuts.
+
+- The installer is unsigned, so Windows SmartScreen may warn on first run — click
+  **More info → Run anyway**.
+- The app ships with the six built-in textbook strategies and a bundled SPY daily
+  dataset, so you can run a backtest immediately; more data can be fetched by ticker
+  in-app via yfinance.
+- Your data, backtest outputs, and any strategies you write in the in-app Editor are
+  stored in `%LOCALAPPDATA%\BacktestingSuite` — local to your machine, never bundled
+  into the app, and preserved across updates and uninstalls.
+
 An interactive Electron + React desktop app lives in [`desktop/`](desktop/). A Python
 FastAPI backend imports the suite engine directly and is spawned by Electron as a
 local sidecar — no CLI shelling. The UI covers a full config panel, an interactive
@@ -148,7 +163,6 @@ the Configure dropdown for backtesting, robustness checks, and comparison. Numer
 ### Prerequisites
 - The Python virtualenv above (with `requirements.txt` installed), at the repo root.
 - Node.js 18+ / npm.
-- A working `strat/` package present (see note below).
 
 ### Develop
 ```powershell
@@ -163,22 +177,22 @@ or a browser UI), from the repo root:
 .venv\Scripts\python -m desktop.backend.main --port 8765
 ```
 
-### Package
+### Package (build the installer)
 ```powershell
-# 1) Build the backend binary (from the repo root)
-.venv\Scripts\pyinstaller desktop/backend/BacktestApiServer.spec
-# 2) Build + package the app (from desktop/frontend)
-npm run dist
+powershell -File desktop\build-installer.ps1
 ```
-Produces an unpacked app under `desktop/frontend/release/win-unpacked/`. To build a
-Windows NSIS installer instead, enable **Windows Developer Mode** (electron-builder's
-code-signing helper needs symlink privileges) and set `win.target` to `"nsis"` in
-`desktop/frontend/package.json`.
+Runs PyInstaller on the backend, then electron-builder, producing the NSIS installer
+at `desktop/frontend/release/BacktestingSuite-Setup-<version>.exe`. Requires
+**Windows Developer Mode** to be enabled (electron-builder's code-signing helper
+needs symlink privileges).
 
-> **Note on `strat/`:** the strategy package, `user_strategies/`, and data files are
-> gitignored by design ("private strategies"). The app resolves strategies through
-> `strategy_registry.py`, which imports `strat/` at runtime, so a working `strat/`
-> package must be present.
+> **Note on `strat/` privacy:** only the allowlisted public-safe built-in strategies
+> (see `PUBLIC_STRAT_MODULES` in `desktop/backend/BacktestApiServer.spec` and the
+> `.gitignore` allowlist) are committed to git or bundled into the installer. Any
+> other file in `strat/` — and everything in `user_strategies/` — stays on your
+> machine; the spec has build-failing assertions that catch leaks. Strategies end
+> users write in-app are stored per-user in `%LOCALAPPDATA%\BacktestingSuite` and are
+> never part of the distributed app.
 
 ---
 

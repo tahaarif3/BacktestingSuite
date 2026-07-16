@@ -50,9 +50,17 @@
     ],
     "win": {
       "target": [
-        "dir"
+        "nsis"
       ],
       "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "BacktestingSuite-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "BacktestingSuite"
     }
   }
 }

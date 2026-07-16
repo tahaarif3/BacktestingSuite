@@ -57,8 +57,22 @@ config.ini
 secrets/
 .secrets
 
-# Secret and private trading strategies
-strat/
+# Secret and private trading strategies.
+# Everything in strat/ is ignored EXCEPT the allowlisted public-safe
+# built-ins below (base class + reconstructed textbook strategies), so the
+# app can be built and run from a fresh clone. Any other file dropped into
+# strat/ stays private. (strat/* rather than strat/ because a directory
+# ignore cannot be negated per-file.)
+strat/*
+!strat/__init__.py
+!strat/base.py
+!strat/buy_and_hold.py
+!strat/sma_crossover.py
+!strat/ema_crossover.py
+!strat/rsi_mean_reversion.py
+!strat/bollinger_bands.py
+!strat/macd.py
+!strat/genetic_programming.py
 user_strategies/
 *secret*
 *private*

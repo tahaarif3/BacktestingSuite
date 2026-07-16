@@ -5,6 +5,7 @@ command line, the GUI's dynamic config form, and the robustness grids never
 drift apart. Adding a strategy here makes it available everywhere.
 """
 
+import importlib
 import importlib.util
 import inspect
 import os
@@ -19,13 +20,26 @@ from backtest.position_sizing import (
     VolatilityBasedSizer,
 )
 
-from strat.buy_and_hold import BuyAndHoldStrategy
-from strat.sma_crossover import SMACrossoverStrategy
-from strat.ema_crossover import EMACrossoverStrategy
-from strat.rsi_mean_reversion import RSIMeanReversionStrategy
-from strat.bollinger_bands import BollingerBandsStrategy
-from strat.macd import MACDStrategy
-from strat.genetic_programming import GeneticProgrammingStrategy
+
+def _try_import(module: str, clsname: str):
+    """Import a built-in strategy class, or None if its module is absent.
+
+    strat/ may be partially populated (private strategies are gitignored), so
+    each built-in registers only when its module is actually importable.
+    """
+    try:
+        return getattr(importlib.import_module(module), clsname)
+    except Exception:
+        return None
+
+
+BuyAndHoldStrategy = _try_import("strat.buy_and_hold", "BuyAndHoldStrategy")
+SMACrossoverStrategy = _try_import("strat.sma_crossover", "SMACrossoverStrategy")
+EMACrossoverStrategy = _try_import("strat.ema_crossover", "EMACrossoverStrategy")
+RSIMeanReversionStrategy = _try_import("strat.rsi_mean_reversion", "RSIMeanReversionStrategy")
+BollingerBandsStrategy = _try_import("strat.bollinger_bands", "BollingerBandsStrategy")
+MACDStrategy = _try_import("strat.macd", "MACDStrategy")
+GeneticProgrammingStrategy = _try_import("strat.genetic_programming", "GeneticProgrammingStrategy")
 
 DEFAULT_GP_JSON = "champion_gp.json"
 
@@ -86,15 +100,26 @@ class StrategySpec:
 
 # --- Strategy definitions -------------------------------------------------
 
-STRATEGIES: Dict[str, StrategySpec] = {
-    "buy_and_hold": StrategySpec(
+STRATEGIES: Dict[str, StrategySpec] = {}
+
+
+def _register(spec: StrategySpec) -> None:
+    """Add a built-in spec, skipping those whose strat module wasn't importable."""
+    if spec.cls is not None:
+        STRATEGIES[spec.id] = spec
+
+
+_register(
+    StrategySpec(
         id="buy_and_hold",
         name="Buy & Hold",
         cls=BuyAndHoldStrategy,
         params=[],
         supports_short=False,
-    ),
-    "sma": StrategySpec(
+    )
+)
+_register(
+    StrategySpec(
         id="sma",
         name="SMA Crossover",
         cls=SMACrossoverStrategy,
@@ -104,8 +129,10 @@ STRATEGIES: Dict[str, StrategySpec] = {
         ],
         supports_short=True,
         wfa_grid={"fast_window": [5, 10, 20], "slow_window": [30, 50, 70]},
-    ),
-    "ema": StrategySpec(
+    )
+)
+_register(
+    StrategySpec(
         id="ema",
         name="EMA Crossover",
         cls=EMACrossoverStrategy,
@@ -115,8 +142,10 @@ STRATEGIES: Dict[str, StrategySpec] = {
         ],
         supports_short=True,
         wfa_grid={"fast_window": [5, 10, 20], "slow_window": [30, 50, 70]},
-    ),
-    "rsi": StrategySpec(
+    )
+)
+_register(
+    StrategySpec(
         id="rsi",
         name="RSI Mean Reversion",
         cls=RSIMeanReversionStrategy,
@@ -128,8 +157,10 @@ STRATEGIES: Dict[str, StrategySpec] = {
         ],
         supports_short=True,
         wfa_grid={"window": [10, 14, 20], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
-    ),
-    "bb": StrategySpec(
+    )
+)
+_register(
+    StrategySpec(
         id="bb",
         name="Bollinger Bands Breakout",
         cls=BollingerBandsStrategy,
@@ -139,8 +170,10 @@ STRATEGIES: Dict[str, StrategySpec] = {
         ],
         supports_short=True,
         wfa_grid={"window": [15, 20, 25], "num_std": [1.5, 2.0, 2.5]},
-    ),
-    "macd": StrategySpec(
+    )
+)
+_register(
+    StrategySpec(
         id="macd",
         name="MACD Trend Following",
         cls=MACDStrategy,
@@ -151,16 +184,18 @@ STRATEGIES: Dict[str, StrategySpec] = {
         ],
         supports_short=True,
         wfa_grid={"fast_window": [10, 12, 15], "slow_window": [22, 26, 30], "signal_window": [7, 9, 11]},
-    ),
-    "gp": StrategySpec(
+    )
+)
+_register(
+    StrategySpec(
         id="gp",
         name="Genetic Programming (Champion)",
         cls=GeneticProgrammingStrategy,
         params=[],
         supports_short=False,
         requires_file=DEFAULT_GP_JSON,
-    ),
-}
+    )
+)
 
 
 # --- Sizer definitions ----------------------------------------------------
