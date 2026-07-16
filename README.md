@@ -1,205 +1,114 @@
-# SPY Event-Driven Backtesting Suite
+# BacktestingSuite
 
-A production-grade, event-driven backtesting system in Python utilizing Pandas and NumPy to simulate realistic trading dynamics on daily SPY historical data. 
+A Windows desktop app for backtesting trading strategies on real market data — no
+Python setup, no command line. Download, install, and run your first backtest in
+under a minute.
 
-The suite is engineered around Clean Architecture principles to separate core trading logic (Strategies, Sizers, Execution Models) from presentation layers (CLI, Presenters, HTML Reports) and validation engines (Monte Carlo, Walk-Forward Analysis).
-
----
-
-## 🛠️ Features
-
-* **Event-Driven Execution Loop**: Simulates realistic bar-by-bar price feed processing, eliminating lookahead bias and enforcing trade execution on the next bar's Open or Close.
-* **Modular Infrastructure**:
-  * **Strategies**: Supports Buy & Hold, SMA Crossover, EMA Crossover, RSI Mean Reversion, Bollinger Bands Breakout, and MACD Trend Following. Supports both `long_only` and long-short regimes.
-  * **Position Sizing**: Dynamically sizes positions based on Fixed Shares, Fixed Fractional (capital percentage), or Volatility-Adjusted (ATR-based dollar risk) models.
-  * **Execution Cost Model**: Accounts for multi-tiered commission costs (flat fee, basis points, or per-share) and linear/absolute slippage.
-* **Robustness & Validation Layer**:
-  * **Train-Test Partitioning**: Evaluates parameter decay ratios out-of-sample.
-  * **Grid Search Optimizer**: Optimizes parameters with overfitting check warnings.
-  * **Walk-Forward Analysis (WFA)**: Validates parameter stability over rolling or anchored windows, calculating Walk-Forward Efficiency (WFE).
-  * **Monte Carlo Simulations**: permutates trade sequence order to model Probability of Ruin and Drawdown Value-at-Risk (VaR).
-  * **Cost Sensitivity Grid**: Maps performance decay across varying slippage and commission rates.
-* **Automated HTML Reporting**: Exports self-contained, beautifully styled slaty-modern dashboard HTML files embedding base64 encoded diagnostic charts (Equity, Drawdown, Rolling Returns) and trade logs.
-* **Interactive Desktop App**: An Electron + React GUI (`desktop/`) over a FastAPI backend that imports the engine directly. Configure and run backtests, fetch data by ticker (yfinance), and explore an interactive dashboard, the robustness suite, and multi-run comparisons — all in one window. See [desktop/README.md](desktop/README.md).
+Built on a production-grade, event-driven backtesting engine (bar-by-bar execution,
+no lookahead bias, realistic commission and slippage modeling), with a full
+robustness suite and an in-app code editor for writing your own strategies.
 
 ---
 
-## 📂 Project Directory Structure
+## 📥 Download & Install
 
-```
-c:\Users\bigbo\Spy_Backtest
-├── analytics
-│   ├── metrics.py        # CAGR, Sharpe, Sortino, Win Rate, Profit Factor, FIFO Trade log extractor
-│   ├── plots.py          # Matplotlib chart generators (Equity, Drawdown, Rolling Returns)
-│   └── reports.py        # Self-contained HTML report compiler (Base64 inline plots)
-├── backtest
-│   ├── event_driven.py   # Event-driven backtesting simulation engine
-│   ├── execution.py      # Execution cost model (slippage, commissions)
-│   ├── portfolio.py      # Tracks equity curve, daily returns, drawdowns
-│   └── position_sizing.py# Position sizers (Fixed Shares, Fractional, ATR Volatility)
-├── data
-│   └── dataloader.py     # Data loaders using Repository pattern (Parquet support)
-├── domain
-│   ├── interfaces.py     # Strategy, Sizer, and Execution model interfaces
-│   └── models.py         # Domain models (Bar object)
-├── presentation
-│   └── presenter.py      # Terminal presentation tables for metrics and trades
-├── validation
-│   ├── optimization.py    # Grid Search, Train-Test split, Walk-Forward Analysis (WFA)
-│   ├── monte_carlo.py     # Trade shuffling sequence risk and ruin simulator
-│   └── sensitivity.py     # Transaction cost sensitivity grid and heatmap
-├── desktop               # Interactive desktop app (see desktop/README.md)
-│   ├── backend           # FastAPI service importing the engine directly
-│   └── frontend          # Electron + React + Vite + TS UI (Plotly charts)
-├── strategy_registry.py  # Single source of truth for strategies, params, sizers (shared by CLI + GUI)
-├── test
-│   ├── test_data.py      # Data validation unit tests
-│   ├── test_strategies.py# Trading strategy signal unit tests
-│   ├── test_backtest.py  # Simulation engine and lookahead unit tests
-│   ├── test_engine.py    # Position sizers and execution cost unit tests
-│   ├── test_analytics.py # Performance metrics and Trade FIFO extractor unit tests
-│   ├── test_robustness.py# Walk-forward and Monte Carlo validation unit tests
-│   └── test_reports.py   # HTML report generator unit tests
-├── cli.py                # Command-line entry point to run backtests and validation
-└── README.md             # Project documentation and CLI usage guide
-```
+**[Download the latest installer](https://github.com/tahaarif3/BacktestingSuite/releases/latest)** —
+`BacktestingSuite-Setup-<version>.exe`
 
----
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-Ensure you have Python 3.10+ installed.
-
-### 2. Environment Setup & Installation
-Set up a Python virtual environment and install dependencies:
-```powershell
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-.\venv\Scripts\activate
-
-# Install required dependencies
-pip install -r requirements.txt
-```
-
-### 3. Fetch Historical SPY Parquet Data
-Execute the sample run script to download historical SPY daily data via yfinance and cache it locally:
-```powershell
-python scratch/sample_run.py
-```
-
----
-
-## 🖥️ Command-Line Interface (CLI) Usage
-
-The unified entry point [cli.py](file:///c:/Users/bigbo/Spy_Backtest/cli.py) allows running backtests, configuring sizers, and conducting robustness tests.
-
-### 1. Help Command
-View all configurable CLI options and defaults:
-```powershell
-python cli.py --help
-```
-
-### 2. Basic Crossover Backtest
-Run an SMA Crossover (10/50 window) backtest using the default fixed fractional sizer:
-```powershell
-python cli.py --strategy sma --fast-window 10 --slow-window 50
-```
-
-### 3. Enable Shorting and Custom Sizing
-Run an RSI Mean Reversion strategy allowing short signals, using an ATR Volatility position sizer risking $500 per trade:
-```powershell
-python cli.py --strategy rsi --short --sizer volatility --sizer-val 500
-```
-
-### 4. Generate Automated HTML Report
-Run a MACD backtest and export a self-contained HTML report with embedded base64 diagnostic charts and trade logs:
-```powershell
-python cli.py --strategy macd --report
-```
-*The HTML report is saved to `output/report.html`.*
-
-### 5. Run Full Robustness & Validation Suite
-Run the SMA strategy and execute Walk-Forward Analysis, Monte Carlo trade sequence shufflers, and Cost Sensitivity heatmaps:
-```powershell
-python cli.py --strategy sma --robustness
-```
-*Outputs are saved to `output/monte_carlo_paths.png` and `output/cost_sensitivity.png`.*
-
----
-
-## 🖥️ Desktop App
-
-### Install (Windows)
-
-Download `BacktestingSuite-Setup-<version>.exe` from the
-[latest release](https://github.com/tahaarif3/BacktestingSuite/releases/latest) and run it.
-It installs per-user (no admin rights needed) and creates Start-menu and desktop shortcuts.
-
-- The installer is unsigned, so Windows SmartScreen may warn on first run — click
+- Installs per-user — **no admin rights needed**. Creates Start-menu and desktop shortcuts.
+- The installer is unsigned, so Windows SmartScreen may warn on first run: click
   **More info → Run anyway**.
-- The app ships with the six built-in textbook strategies and a bundled SPY daily
-  dataset, so you can run a backtest immediately; more data can be fetched by ticker
-  in-app via yfinance.
-- Your data, backtest outputs, and any strategies you write in the in-app Editor are
-  stored in `%LOCALAPPDATA%\BacktestingSuite` — local to your machine, never bundled
-  into the app, and preserved across updates and uninstalls.
+- Ships with six built-in strategies and a bundled SPY daily dataset (2015–2024), so
+  you can run a backtest immediately. Fetch more data by ticker in-app via Yahoo Finance.
 
-An interactive Electron + React desktop app lives in [`desktop/`](desktop/). A Python
-FastAPI backend imports the suite engine directly and is spawned by Electron as a
-local sidecar — no CLI shelling. The UI covers a full config panel, an interactive
-results dashboard (equity, drawdown, rolling returns, trade log), the robustness
-suite (train/test, walk-forward, Monte Carlo, cost-sensitivity heatmap), and
-multi-run comparison. Data can be loaded from local Parquet or fetched by ticker.
+### Your data stays yours
 
-An **Editor** tab (Monaco, bundled locally) lets you write custom strategies in-app:
-subclass `strat.base.BaseStrategy`, hit *Save & Register*, and the strategy is
-validated on synthetic data, saved to `user_strategies/`, and appears immediately in
-the Configure dropdown for backtesting, robustness checks, and comparison. Numeric
-`__init__` defaults become editable parameter fields automatically.
+Everything you create — datasets, backtest outputs, and any strategies you write in
+the in-app Editor — is stored locally in `%LOCALAPPDATA%\BacktestingSuite`. Your
+strategies are never bundled into the app or shared, and they survive updates and
+uninstalls.
 
-### Prerequisites
-- The Python virtualenv above (with `requirements.txt` installed), at the repo root.
-- Node.js 18+ / npm.
+---
 
-### Develop
+## ✨ What you can do
+
+- **Configure & run backtests**: pick a strategy, tune its parameters, choose a
+  position sizer (fixed shares, fixed fractional, or ATR volatility-adjusted), set
+  capital, commission, slippage, execution timing, and long/short mode.
+- **Explore results interactively**: metric cards (CAGR, Sharpe, Sortino, max
+  drawdown, win rate, profit factor), equity vs. benchmark, drawdown and rolling
+  return charts, and a full trade log.
+- **Stress-test for robustness**: train/test splits with parameter-decay checks,
+  walk-forward analysis, Monte Carlo trade-sequence simulations (probability of
+  ruin, drawdown VaR), and cost-sensitivity heatmaps.
+- **Compare runs**: overlay equity curves and metrics from multiple backtests
+  side by side.
+- **Write your own strategies**: a built-in Monaco code editor (works offline).
+  Subclass `BaseStrategy`, hit *Save & Register*, and your strategy is validated,
+  registered, and immediately available for backtesting — numeric parameters become
+  editable form fields automatically.
+- **Bring your own data**: load local Parquet files or fetch any ticker by symbol.
+
+### Built-in strategies
+
+Buy & Hold · SMA Crossover · EMA Crossover · RSI Mean Reversion · Bollinger Bands
+Breakout · MACD Trend Following — all supporting long-only or long/short regimes.
+
+---
+
+## 🏗️ Under the hood
+
+The app is an Electron + React frontend over a Python FastAPI backend that Electron
+spawns as a local sidecar (everything runs on your machine; nothing is sent
+anywhere). The backend imports the backtesting engine directly:
+
+- **Event-driven execution loop** — bar-by-bar processing that eliminates lookahead
+  bias and executes trades on the next bar's open or close.
+- **Clean architecture** — strategies, sizers, and execution-cost models are
+  swappable modules behind interfaces (`domain/`), with the engine (`backtest/`),
+  analytics (`analytics/`), and validation suite (`validation/`) fully decoupled.
+- **Single strategy registry** — `strategy_registry.py` is the one source of truth
+  for strategies, parameters, and robustness grids across the whole app.
+
+---
+
+## 🔧 Building from source
+
+For contributors, or to build the installer yourself.
+
+**Prerequisites**: Python 3.10+, Node.js 18+.
+
 ```powershell
-cd desktop/frontend
+# Engine + backend
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+
+# Run the app in development
+cd desktop\frontend
 npm install
 npm run dev
 ```
-Electron finds a free port, launches the backend with the repo's `.venv` Python,
-waits for `/health`, then opens the window. To run just the backend (for API testing
-or a browser UI), from the repo root:
-```powershell
-.venv\Scripts\python -m desktop.backend.main --port 8765
-```
 
-### Package (build the installer)
+**Build the Windows installer** (from the repo root; requires Windows Developer Mode
+for electron-builder's symlink handling):
+
 ```powershell
 powershell -File desktop\build-installer.ps1
 ```
-Runs PyInstaller on the backend, then electron-builder, producing the NSIS installer
-at `desktop/frontend/release/BacktestingSuite-Setup-<version>.exe`. Requires
-**Windows Developer Mode** to be enabled (electron-builder's code-signing helper
-needs symlink privileges).
 
-> **Note on `strat/` privacy:** only the allowlisted public-safe built-in strategies
-> (see `PUBLIC_STRAT_MODULES` in `desktop/backend/BacktestApiServer.spec` and the
-> `.gitignore` allowlist) are committed to git or bundled into the installer. Any
-> other file in `strat/` — and everything in `user_strategies/` — stays on your
-> machine; the spec has build-failing assertions that catch leaks. Strategies end
-> users write in-app are stored per-user in `%LOCALAPPDATA%\BacktestingSuite` and are
-> never part of the distributed app.
+Produces `desktop/frontend/release/BacktestingSuite-Setup-<version>.exe`. See
+[desktop/README.md](desktop/README.md) for architecture and packaging details.
 
----
-
-## 🧪 Running Unit Tests
-
-Run the automated unit tests verifying data loaders, strategies, engine mechanics, cost models, sizers, analytics, validation metrics, and reporting (47 passing; one Genetic Programming signal test is skipped unless `champion_gp.json` is present):
+**Run the test suite**:
 
 ```powershell
 pytest
 ```
+
+> **Strategy privacy by design:** only the allowlisted public built-in strategies
+> (see `PUBLIC_STRAT_MODULES` in `desktop/backend/BacktestApiServer.spec` and the
+> `.gitignore` allowlist) are committed to git or bundled into the installer. Any
+> other file dropped into `strat/`, and everything in `user_strategies/`, stays on
+> your machine — the build fails hard if private modules or data files leak into
+> the bundle.
