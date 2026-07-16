@@ -231,6 +231,37 @@ tr:hover td { background: var(--bg-elev); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.success {
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid var(--success);
+  color: var(--success);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+/* Strategy code editor */
+.editor-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.editor-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.hint code {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
 .warn-tag {
   display: inline-block;
   background: rgba(248,113,113,0.15);

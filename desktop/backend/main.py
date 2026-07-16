@@ -21,8 +21,14 @@ from desktop.backend.schemas import (
     CompareRequest,
     FetchRequest,
     RobustnessRequest,
+    SaveStrategyRequest,
 )
-from desktop.backend.services import backtest_service, data_service, robustness_service
+from desktop.backend.services import (
+    backtest_service,
+    data_service,
+    robustness_service,
+    strategy_editor_service,
+)
 
 from strategy_registry import list_strategies, list_sizers
 
@@ -97,6 +103,45 @@ def post_compare(req: CompareRequest):
         return robustness_service.compare(req)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- User strategy editor ---------------------------------------------------
+# NOTE: /template must be declared before /{name} so it isn't captured by it.
+
+@app.get("/api/user-strategies")
+def list_user_strategies():
+    return {"files": strategy_editor_service.list_files()}
+
+
+@app.get("/api/user-strategies/template")
+def get_user_strategy_template():
+    return {"code": strategy_editor_service.TEMPLATE}
+
+
+@app.get("/api/user-strategies/{name}")
+def get_user_strategy(name: str):
+    try:
+        return {"name": name, "code": strategy_editor_service.get_code(name)}
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/user-strategies")
+def save_user_strategy(req: SaveStrategyRequest):
+    try:
+        ids = strategy_editor_service.save(req.filename, req.code)
+        return {"ok": True, "registered": ids}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/user-strategies/{name}")
+def delete_user_strategy(name: str):
+    try:
+        ids = strategy_editor_service.delete(name)
+        return {"ok": True, "registered": ids}
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 def main():
