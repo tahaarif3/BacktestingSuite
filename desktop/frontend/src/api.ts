@@ -8,9 +8,25 @@ import type {
   StrategySpec,
 } from "./types";
 
+export type UpdateEvent =
+  | { type: "checking" }
+  | { type: "available"; version: string }
+  | { type: "none" }
+  | { type: "progress"; percent: number }
+  | { type: "downloaded"; version: string }
+  | { type: "error"; message: string };
+
 declare global {
   interface Window {
-    backtest?: { baseUrl: string };
+    backtest?: {
+      baseUrl: string;
+      appVersion?: string;
+      platform?: string;
+      onUpdateEvent?: (cb: (e: UpdateEvent) => void) => () => void;
+      checkForUpdates?: () => Promise<unknown>;
+      installUpdate?: () => Promise<void>;
+      reportBug?: () => Promise<void>;
+    };
   }
 }
 

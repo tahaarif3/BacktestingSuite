@@ -20,6 +20,15 @@ robustness suite and an in-app code editor for writing your own strategies.
   **More info → Run anyway**.
 - Ships with six built-in strategies and a bundled SPY daily dataset (2015–2024), so
   you can run a backtest immediately. Fetch more data by ticker in-app via Yahoo Finance.
+- **Updates itself automatically**: the app checks GitHub Releases on launch, downloads
+  new versions in the background, and shows a *Restart to update* banner when one is
+  ready. You can also trigger a check from the **Check for updates** link in the top bar.
+
+### Found a bug?
+
+Click **Report a bug** in the top-right of the app — it opens a prefilled GitHub issue
+with your app version and OS already filled in. Or file one directly on the
+[issues page](https://github.com/tahaarif3/BacktestingSuite/issues/new/choose).
 
 ### Your data stays yours
 
