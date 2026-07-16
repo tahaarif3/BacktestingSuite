@@ -81,8 +81,37 @@ Manual two-step equivalent:
 
 ```powershell
 # 1) build the backend binary (from repo root)
-.venv\Scripts\pyinstaller desktop\backend\BacktestApiServer.spec --noconfirm `
+.venv\Scripts\python -m PyInstaller desktop\backend\BacktestApiServer.spec --noconfirm `
     --distpath desktop\backend\dist --workpath desktop\backend\build
 # 2) build + package the app (from desktop/frontend)
 npm run dist
 ```
+
+## Release procedure (auto-update)
+
+The app auto-updates via `electron-updater`, which reads `latest.yml` from the
+repo's latest GitHub Release. To ship a new version:
+
+1. Bump `version` in `frontend/package.json`.
+2. Build and publish in one step:
+   ```powershell
+   powershell -File desktop\build-installer.ps1 -Publish
+   ```
+   This builds the installer, then runs `gh release create v<version>` with the
+   **three** required assets. Without `-Publish` it just prints those three files
+   for manual upload (drag them into the GitHub *New release* page):
+   - `BacktestingSuite-Setup-<version>.exe`
+   - `BacktestingSuite-Setup-<version>.exe.blockmap`
+   - `latest.yml`
+3. Confirm the release is **published** (not a draft or prerelease) — electron-updater
+   ignores both.
+
+Installed apps pick up the release on their next launch, or when the user clicks
+*Check for updates*. `latest.yml` is mandatory: it's the manifest the updater fetches
+first, and without it clients never see the update. The `.blockmap` enables
+differential downloads (smaller updates).
+
+> **Publish config:** the `publish` block in `frontend/package.json` (github provider,
+> `tahaarif3/BacktestingSuite`) is what makes electron-builder emit `latest.yml` and
+> embed `resources/app-update.yml` in the packaged app. The app is unsigned, so the
+> updater skips Authenticode verification — no certificate needed.

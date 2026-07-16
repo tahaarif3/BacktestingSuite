@@ -14,6 +14,7 @@ import ResultsDashboard from "./components/ResultsDashboard";
 import RobustnessPanel from "./components/RobustnessPanel";
 import ComparePanel from "./components/ComparePanel";
 import EditorPanel from "./components/EditorPanel";
+import UpdateBanner from "./components/UpdateBanner";
 
 const DEFAULT_CONFIG: BacktestConfig = {
   strategy: "sma",
@@ -171,9 +172,28 @@ export default function App() {
           <div className={`tab ${tab === "editor" ? "active" : ""}`} onClick={() => setTab("editor")}>
             Editor
           </div>
+
+          <div className="tabs-right">
+            <button
+              className="tabs-link"
+              onClick={() => window.backtest?.checkForUpdates?.()}
+              title="Check GitHub for a newer version"
+            >
+              Check for updates
+            </button>
+            <button
+              className="tabs-link"
+              onClick={() => window.backtest?.reportBug?.()}
+              title="Open a prefilled GitHub issue"
+            >
+              Report a bug
+            </button>
+            <span className="app-version">v{window.backtest?.appVersion ?? "dev"}</span>
+          </div>
         </div>
 
         <div className="content">
+          <UpdateBanner />
           {error && <div className="error">{error}</div>}
           {tab === "results" && <ResultsDashboard result={result} />}
           {tab === "robustness" && <RobustnessPanel result={robustness} />}

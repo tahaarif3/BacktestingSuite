@@ -1,6 +1,6 @@
 {
   "name": "backtesting-suite-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Interactive desktop app for the SPY event-driven BacktestingSuite",
   "author": "BacktestingSuite",
   "main": "electron/main.cjs",
@@ -10,9 +10,10 @@
     "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder --publish never"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "@monaco-editor/react": "^4.7.0",
     "monaco-editor": "^0.55.1",
     "plotly.js-dist-min": "^2.35.2",
@@ -46,6 +47,14 @@
       {
         "from": "../backend/dist/BacktestApiServer",
         "to": "backend"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "tahaarif3",
+        "repo": "BacktestingSuite",
+        "releaseType": "release"
       }
     ],
     "win": {
