@@ -1,5 +1,5 @@
 import type { BacktestResult } from "../types";
-import { METRIC_FORMAT } from "../format";
+import { METRIC_FORMAT, metricTone } from "../format";
 import MetricCard from "./MetricCard";
 import TradeTable from "./TradeTable";
 import Plot, { PALETTE } from "./Plot";
@@ -10,14 +10,7 @@ export default function ResultsDashboard({ result }: { result: BacktestResult | 
   }
 
   const s = result.series;
-
-  const tone = (key: string, v: number): "pos" | "neg" | "neutral" => {
-    const meta = METRIC_FORMAT[key];
-    if (!meta) return "neutral";
-    if (key === "Total Trades" || key === "Exposure Time") return "neutral";
-    const good = meta.goodHigh ? v > 0 : v < 0;
-    return good ? "pos" : "neg";
-  };
+  const tone = metricTone;
 
   return (
     <div>

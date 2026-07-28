@@ -19,13 +19,20 @@ from fastapi.responses import HTMLResponse
 from desktop.backend.schemas import (
     BacktestConfig,
     CompareRequest,
+    CreateReplaySessionRequest,
     FetchRequest,
+    ReplayOrderRequest,
+    RewindRequest,
     RobustnessRequest,
     SaveStrategyRequest,
+    SeekRequest,
+    TickerValidateRequest,
 )
 from desktop.backend.services import (
     backtest_service,
     data_service,
+    market_meta,
+    replay_service,
     robustness_service,
     strategy_editor_service,
 )
@@ -66,7 +73,9 @@ def get_data_list():
 @app.post("/api/data/fetch")
 def post_data_fetch(req: FetchRequest):
     try:
-        return data_service.fetch_ticker(req.ticker, req.start, req.end, req.interval)
+        return data_service.fetch_ticker(
+            req.ticker, req.start, req.end, req.interval, merge=req.merge, refresh=req.refresh
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -141,6 +150,163 @@ def delete_user_strategy(name: str):
         ids = strategy_editor_service.delete(name)
         return {"ok": True, "registered": ids}
     except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# --- Market metadata & ticker lookup ---------------------------------------
+
+
+@app.get("/api/data/intervals")
+def get_intervals():
+    return {"intervals": market_meta.list_intervals()}
+
+
+@app.post("/api/data/validate")
+def post_data_validate(req: TickerValidateRequest):
+    try:
+        return market_meta.validate_ticker(req.ticker, req.interval, req.start, req.end)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/data/search")
+def get_data_search(q: str, limit: int = 10):
+    try:
+        return {"results": market_meta.search_tickers(q, limit)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# --- Replay / manual trading ------------------------------------------------
+# NOTE: /orders/undo must be declared before /orders/{order_id} so "undo" isn't
+# captured as an order id.
+
+
+@app.post("/api/replay/sessions")
+def post_replay_session(req: CreateReplaySessionRequest):
+    try:
+        return replay_service.create_session(req)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionTooLarge as e:
+        raise HTTPException(status_code=413, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/replay/sessions")
+def list_replay_sessions():
+    return {"sessions": replay_service.list_sessions()}
+
+
+@app.get("/api/replay/sessions/{sid}")
+def get_replay_session(sid: str):
+    try:
+        return replay_service.get_state(sid)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+
+
+@app.get("/api/replay/sessions/{sid}/bars")
+def get_replay_bars(sid: str, start: int = 0, count: int = replay_service.DEFAULT_BAR_CHUNK):
+    try:
+        return replay_service.get_bars(sid, start, count)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexError as e:
+        raise HTTPException(status_code=416, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/replay/sessions/{sid}/orders")
+def post_replay_order(sid: str, req: ReplayOrderRequest):
+    try:
+        return replay_service.submit_order(sid, req)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+    except replay_service.OrderRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/replay/sessions/{sid}/orders/undo")
+def post_replay_undo(sid: str):
+    try:
+        return replay_service.undo_last_order(sid)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.OrderRejected as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.delete("/api/replay/sessions/{sid}/orders/{order_id}")
+def delete_replay_order(sid: str, order_id: str):
+    try:
+        return replay_service.delete_order(sid, order_id)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/replay/sessions/{sid}/seek")
+def post_replay_seek(sid: str, req: SeekRequest):
+    try:
+        return replay_service.seek(sid, req.to_index)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+
+
+@app.post("/api/replay/sessions/{sid}/rewind")
+def post_replay_rewind(sid: str, req: RewindRequest):
+    try:
+        return replay_service.rewind(sid, req.to_index, req.confirm_discard_orders)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.OrderRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/replay/sessions/{sid}/reset")
+def post_replay_reset(sid: str):
+    try:
+        return replay_service.reset(sid)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/replay/sessions/{sid}/score")
+def get_replay_score(sid: str, upto: int = None):
+    try:
+        return replay_service.score(sid, upto)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+
+
+@app.get("/api/replay/sessions/{sid}/journal")
+def get_replay_journal(sid: str, upto: int = None):
+    try:
+        return replay_service.journal(sid, upto)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+
+
+@app.delete("/api/replay/sessions/{sid}")
+def delete_replay_session(sid: str):
+    try:
+        replay_service.delete_session(sid)
+        return {"ok": True}
+    except replay_service.SessionNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 

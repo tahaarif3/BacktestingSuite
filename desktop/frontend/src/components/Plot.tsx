@@ -21,6 +21,8 @@ export const PALETTE = {
   danger: "#f87171",
   success: "#34d399",
   accent: "#a78bfa",
+  up: "#34d399",
+  down: "#f87171",
 };
 
 interface PlotProps {

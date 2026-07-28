@@ -3,9 +3,20 @@ import type {
   BacktestResult,
   CompareRun,
   DataFile,
+  IntervalSpec,
+  JournalEntry,
+  ReplayBars,
+  ReplayOrderRequest,
+  ReplayOrderResponse,
+  ReplayScore,
+  ReplaySessionConfig,
+  ReplaySessionResponse,
+  ReplayState,
   RobustnessResult,
   SizerSpec,
   StrategySpec,
+  TickerInfo,
+  TickerSearchHit,
 } from "./types";
 
 export type UpdateEvent =
@@ -113,4 +124,56 @@ export const api = {
     del<{ ok: boolean; registered: string[] }>(`/api/user-strategies/${name}`),
 
   reportUrl: `${BASE}/api/backtest/report`,
+
+  // --- Market metadata & ticker lookup ---
+  listIntervals: () =>
+    get<{ intervals: IntervalSpec[] }>("/api/data/intervals").then((r) => r.intervals),
+
+  validateTicker: (ticker: string, interval = "1d", start?: string, end?: string) =>
+    post<TickerInfo>("/api/data/validate", { ticker, interval, start, end }),
+
+  searchTickers: (q: string, limit = 10) =>
+    get<{ results: TickerSearchHit[] }>(
+      `/api/data/search?q=${encodeURIComponent(q)}&limit=${limit}`
+    ).then((r) => r.results),
+
+  // --- Replay / manual trading ---
+  createReplaySession: (config: ReplaySessionConfig) =>
+    post<ReplaySessionResponse>("/api/replay/sessions", { config }),
+
+  getReplayState: (id: string) =>
+    get<ReplayState>(`/api/replay/sessions/${id}`),
+
+  getReplayBars: (id: string, start: number, count: number) =>
+    get<ReplayBars>(`/api/replay/sessions/${id}/bars?start=${start}&count=${count}`),
+
+  submitReplayOrder: (id: string, order: ReplayOrderRequest) =>
+    post<ReplayOrderResponse>(`/api/replay/sessions/${id}/orders`, order),
+
+  undoReplayOrder: (id: string) =>
+    post<ReplayState>(`/api/replay/sessions/${id}/orders/undo`, {}),
+
+  seekReplay: (id: string, toIndex: number) =>
+    post<ReplayState>(`/api/replay/sessions/${id}/seek`, { to_index: toIndex }),
+
+  rewindReplay: (id: string, toIndex: number, confirm = false) =>
+    post<ReplayState>(`/api/replay/sessions/${id}/rewind`, {
+      to_index: toIndex,
+      confirm_discard_orders: confirm,
+    }),
+
+  resetReplay: (id: string) => post<ReplayState>(`/api/replay/sessions/${id}/reset`, {}),
+
+  scoreReplay: (id: string, upto?: number) =>
+    get<ReplayScore>(
+      `/api/replay/sessions/${id}/score${upto !== undefined ? `?upto=${upto}` : ""}`
+    ),
+
+  getReplayJournal: (id: string, upto?: number) =>
+    get<{ entries: JournalEntry[] }>(
+      `/api/replay/sessions/${id}/journal${upto !== undefined ? `?upto=${upto}` : ""}`
+    ).then((r) => r.entries),
+
+  deleteReplaySession: (id: string) =>
+    del<{ ok: boolean }>(`/api/replay/sessions/${id}`),
 };

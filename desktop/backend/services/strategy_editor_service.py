@@ -132,6 +132,23 @@ def _validate(stem: str, code: str) -> None:
                 f"{cls.__name__}.generate_signals must return a list of floats aligned "
                 f"with the input bars (got length {got}, expected {len(bars)})."
             )
+        # Catch lookahead (peeking at future bars) at save time, not replay time.
+        try:
+            from desktop.backend.services.replay_ledger import audit_causality
+
+            report = audit_causality(instance, bars)
+            if not report.get("causal", True):
+                idx = report.get("first_divergence_index")
+                raise ValueError(
+                    f"{cls.__name__} appears to use future data (its signals change "
+                    f"retroactively at bar {idx}). A strategy must decide each bar using "
+                    "only past and current data — check for shifts/indexing that peek ahead."
+                )
+        except ValueError:
+            raise
+        except Exception:
+            # An audit failure must never block a save on its own.
+            pass
 
 
 def list_files() -> List[str]:
