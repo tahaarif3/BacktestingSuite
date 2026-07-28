@@ -33,9 +33,16 @@ def load_bars(config: BacktestConfig) -> List[Bar]:
     return DataLoader().get_bars(path)
 
 
-def run_engine(config: BacktestConfig, bars: List[Bar]) -> Tuple[Portfolio, pd.DataFrame, Dict[str, Any], type]:
+def run_engine(
+    config: BacktestConfig, bars: List[Bar], signals: List[float] = None
+) -> Tuple[Portfolio, pd.DataFrame, Dict[str, Any], type]:
     """Build components from the config and run the engine. Returns
-    (portfolio, trades_df, resolved_strategy_params, strategy_class)."""
+    (portfolio, trades_df, resolved_strategy_params, strategy_class).
+
+    ``signals`` lets callers (e.g. the replay layer) supply a precomputed signal
+    series so the engine runs the exact same signals rather than regenerating
+    them. When ``None`` the strategy generates them, preserving existing callers.
+    """
     strategy, strategy_params = build_strategy(
         config.strategy, config.params, allow_short=config.short
     )
@@ -53,7 +60,7 @@ def run_engine(config: BacktestConfig, bars: List[Bar]) -> Tuple[Portfolio, pd.D
         execution_timing=config.timing,
         min_trade_shares=config.min_trade_shares,
     )
-    portfolio = engine.run(bars)
+    portfolio = engine.run(bars, signals=signals)
     trades_df = extract_trades(portfolio.data, config.timing)
     return portfolio, trades_df, strategy_params, type(strategy)
 

@@ -14,6 +14,7 @@ import ResultsDashboard from "./components/ResultsDashboard";
 import RobustnessPanel from "./components/RobustnessPanel";
 import ComparePanel from "./components/ComparePanel";
 import EditorPanel from "./components/EditorPanel";
+import ReplayPanel from "./components/replay/ReplayPanel";
 import UpdateBanner from "./components/UpdateBanner";
 
 const DEFAULT_CONFIG: BacktestConfig = {
@@ -32,7 +33,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
-type Tab = "results" | "robustness" | "compare" | "editor";
+type Tab = "results" | "robustness" | "compare" | "replay" | "editor";
 
 export default function App() {
   const [strategies, setStrategies] = useState<StrategySpec[]>([]);
@@ -46,8 +47,14 @@ export default function App() {
   const [compareRuns, setCompareRuns] = useState<CompareRun[]>([]);
 
   const [tab, setTab] = useState<Tab>("results");
+  const [replayVisited, setReplayVisited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState({ run: false, robustness: false, fetch: false });
+
+  const goTab = (t: Tab) => {
+    if (t === "replay") setReplayVisited(true);
+    setTab(t);
+  };
 
   useEffect(() => {
     (async () => {
@@ -98,9 +105,9 @@ export default function App() {
       setTab("robustness");
     });
 
-  const onFetch = (ticker: string, start: string, end: string) =>
+  const onFetch = (sel: { ticker: string; start: string; end: string; interval: string }) =>
     guard("fetch", async () => {
-      const file = await api.fetchTicker(ticker, start, end);
+      const file = await api.fetchTicker(sel.ticker, sel.start, sel.end, sel.interval);
       setDataFiles(await api.listData());
       setConfig({ ...config, data: { ...config.data, source: "file", file: file.name } });
     });
@@ -143,33 +150,38 @@ export default function App() {
   };
 
   return (
-    <div className="app">
-      <ConfigPanel
-        strategies={strategies}
-        sizers={sizers}
-        dataFiles={dataFiles}
-        config={config}
-        setConfig={setConfig}
-        onRun={onRun}
-        onAddCompare={onAddCompare}
-        onRobustness={onRobustness}
-        onFetch={onFetch}
-        busy={busy}
-      />
+    <div className={`app ${tab === "replay" ? "app--full" : ""}`}>
+      {tab !== "replay" && (
+        <ConfigPanel
+          strategies={strategies}
+          sizers={sizers}
+          dataFiles={dataFiles}
+          config={config}
+          setConfig={setConfig}
+          onRun={onRun}
+          onAddCompare={onAddCompare}
+          onRobustness={onRobustness}
+          onFetch={onFetch}
+          busy={busy}
+        />
+      )}
 
       <div className="main">
         <div className="tabs">
-          <div className={`tab ${tab === "results" ? "active" : ""}`} onClick={() => setTab("results")}>
+          <div className={`tab ${tab === "results" ? "active" : ""}`} onClick={() => goTab("results")}>
             Results
           </div>
-          <div className={`tab ${tab === "robustness" ? "active" : ""}`} onClick={() => setTab("robustness")}>
+          <div className={`tab ${tab === "robustness" ? "active" : ""}`} onClick={() => goTab("robustness")}>
             Robustness
           </div>
-          <div className={`tab ${tab === "compare" ? "active" : ""}`} onClick={() => setTab("compare")}>
+          <div className={`tab ${tab === "compare" ? "active" : ""}`} onClick={() => goTab("compare")}>
             Compare
             {compareRuns.length > 0 && <span className="badge">{compareRuns.length}</span>}
           </div>
-          <div className={`tab ${tab === "editor" ? "active" : ""}`} onClick={() => setTab("editor")}>
+          <div className={`tab ${tab === "replay" ? "active" : ""}`} onClick={() => goTab("replay")}>
+            Replay
+          </div>
+          <div className={`tab ${tab === "editor" ? "active" : ""}`} onClick={() => goTab("editor")}>
             Editor
           </div>
 
@@ -192,7 +204,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="content">
+        <div className={`content ${tab === "replay" ? "content--flush" : ""}`}>
           <UpdateBanner />
           {error && <div className="error">{error}</div>}
           {tab === "results" && <ResultsDashboard result={result} />}
@@ -201,6 +213,18 @@ export default function App() {
             <ComparePanel runs={compareRuns} onClear={onClearCompare} onRemove={onRemoveCompare} />
           )}
           {tab === "editor" && <EditorPanel onStrategiesChanged={onStrategiesChanged} />}
+          {replayVisited && (
+            <div style={{ display: tab === "replay" ? "block" : "none", height: "100%" }}>
+              <ReplayPanel
+                strategies={strategies}
+                sizers={sizers}
+                dataFiles={dataFiles}
+                onFetch={onFetch}
+                fetchBusy={busy.fetch}
+                active={tab === "replay"}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

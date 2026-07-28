@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { BacktestConfig, DataFile, SizerSpec, StrategySpec } from "../types";
+import TickerPicker, { type TickerSelection } from "./TickerPicker";
 
 interface Props {
   strategies: StrategySpec[];
@@ -10,13 +11,18 @@ interface Props {
   onRun: () => void;
   onAddCompare: () => void;
   onRobustness: () => void;
-  onFetch: (ticker: string, start: string, end: string) => void;
+  onFetch: (sel: TickerSelection) => void;
   busy: { run: boolean; robustness: boolean; fetch: boolean };
 }
 
 export default function ConfigPanel(props: Props) {
   const { strategies, sizers, dataFiles, config, setConfig, busy } = props;
-  const [tickerForm, setTickerForm] = useState({ ticker: "SPY", start: "2015-01-01", end: "2024-12-31" });
+  const [tickerForm, setTickerForm] = useState<TickerSelection>({
+    ticker: "SPY",
+    start: "2015-01-01",
+    end: "2024-12-31",
+    interval: "1d",
+  });
 
   const spec = useMemo(
     () => strategies.find((s) => s.id === config.strategy),
@@ -71,41 +77,13 @@ export default function ConfigPanel(props: Props) {
           </select>
         </div>
       ) : (
-        <>
-          <div className="field">
-            <label>Ticker</label>
-            <input
-              value={tickerForm.ticker}
-              onChange={(e) => setTickerForm({ ...tickerForm, ticker: e.target.value.toUpperCase() })}
-            />
-          </div>
-          <div className="row">
-            <div className="field">
-              <label>Start</label>
-              <input
-                type="date"
-                value={tickerForm.start}
-                onChange={(e) => setTickerForm({ ...tickerForm, start: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>End</label>
-              <input
-                type="date"
-                value={tickerForm.end}
-                onChange={(e) => setTickerForm({ ...tickerForm, end: e.target.value })}
-              />
-            </div>
-          </div>
-          <button
-            className="btn btn-secondary"
-            disabled={busy.fetch}
-            onClick={() => props.onFetch(tickerForm.ticker, tickerForm.start, tickerForm.end)}
-          >
-            {busy.fetch && <span className="spinner" />}
-            Fetch &amp; use {tickerForm.ticker}
-          </button>
-        </>
+        <TickerPicker
+          value={tickerForm}
+          onChange={setTickerForm}
+          onFetch={props.onFetch}
+          busy={busy.fetch}
+          compact
+        />
       )}
 
       <div className="section-title">Strategy</div>

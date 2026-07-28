@@ -20,8 +20,10 @@ if getattr(sys, "frozen", False):
     )
     DATA_DIR = os.path.join(_USER_BASE, "data")
     OUTPUT_DIR = os.path.join(_USER_BASE, "output")
+    SESSIONS_DIR = os.path.join(_USER_BASE, "replay_sessions")
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
 
     # Seed the default dataset from the bundle if the user dir is empty.
     # PyInstaller unpacks bundled datas under sys._MEIPASS (the _internal dir in
@@ -42,6 +44,8 @@ else:
     )
     DATA_DIR = os.path.join(REPO_ROOT, "data")
     OUTPUT_DIR = os.path.join(REPO_ROOT, "output")
+    SESSIONS_DIR = os.path.join(OUTPUT_DIR, "replay_sessions")
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
