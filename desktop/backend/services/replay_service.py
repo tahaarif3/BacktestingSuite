@@ -50,6 +50,10 @@ from desktop.backend.services.replay_ledger import (
     is_intraday,
     iso_index,
 )
+from options.ledger import OptionOrder, OptionsLedgerResult, build_iv_series, build_options_ledger
+from options.portfolio import mark_structure, reconstruct_option_trades
+from options.structures import StructureSpec
+from backtest.options_engine import OptionsEventDrivenEngine
 
 # --- limits -----------------------------------------------------------------
 
@@ -96,6 +100,7 @@ class ReplaySession:
     cursor: int
     high_water: int
     orders: List[ReplayOrder]
+    option_orders: List[OptionOrder]
     data_fingerprint: str
     strategy_fingerprint: str
     # derived (never persisted)
@@ -116,6 +121,12 @@ class ReplaySession:
     last_touched_at: float = 0.0
     _ledger_cache: Optional[LedgerResult] = None
     _ledger_upto: int = -1
+    _opt_ledger_cache: Optional[OptionsLedgerResult] = None
+    _opt_ledger_upto: int = -1
+
+    @property
+    def is_options(self) -> bool:
+        return self.config.mode == "options"
 
 
 # --- helpers ----------------------------------------------------------------
@@ -145,10 +156,63 @@ def _touch(s: ReplaySession) -> None:
 def _invalidate(s: ReplaySession) -> None:
     s._ledger_cache = None
     s._ledger_upto = -1
+    s._opt_ledger_cache = None
+    s._opt_ledger_upto = -1
+
+
+def _opt_vol_kwargs(cfg: ReplaySessionConfig) -> Dict[str, Any]:
+    v = cfg.vol
+    if v is None:
+        return {}
+    return {
+        "risk_free_rate": v.risk_free_rate,
+        "iv_window": v.iv_window,
+        "iv_multiplier": v.iv_multiplier,
+        "iv_override": v.iv_override,
+        "iv_floor": v.iv_floor,
+        "iv_cap": v.iv_cap,
+        "margin_policy": v.margin_policy,
+    }
+
+
+def _structure_spec_from_cfg(cfg_opt) -> StructureSpec:
+    if cfg_opt is None:
+        return StructureSpec()
+    return StructureSpec(
+        structure_type=cfg_opt.structure_type,
+        selection=cfg_opt.selection,
+        short_delta=cfg_opt.short_delta,
+        pct_otm=cfg_opt.pct_otm,
+        width=cfg_opt.width,
+        strikes=list(cfg_opt.strikes) if cfg_opt.strikes else None,
+        dte_bars=cfg_opt.dte_bars,
+        contracts=cfg_opt.contracts,
+        grid_spacing=cfg_opt.grid_spacing,
+    )
+
+
+def _options_ledger(s: ReplaySession, upto: Optional[int] = None) -> OptionsLedgerResult:
+    target = s.cursor if upto is None else upto
+    target = max(0, min(target, len(s.bars) - 1))
+    if s._opt_ledger_cache is not None and s._opt_ledger_upto == target:
+        return s._opt_ledger_cache
+    res = build_options_ledger(
+        s.bars,
+        s.option_orders,
+        upto_index=target,
+        capital=s.config.capital,
+        exec_model=_exec_model(s.config),
+        timing=s.config.timing,
+        **_opt_vol_kwargs(s.config),
+    )
+    s._opt_ledger_cache = res
+    s._opt_ledger_upto = target
+    return res
 
 
 def _recompute_high_water(s: ReplaySession) -> None:
-    s.high_water = max([o.bar_index + 1 for o in s.orders], default=s.start_index)
+    bar_indices = [o.bar_index + 1 for o in s.orders] + [o.bar_index + 1 for o in s.option_orders]
+    s.high_water = max(bar_indices, default=s.start_index)
 
 
 def _ledger(s: ReplaySession, upto: Optional[int] = None) -> LedgerResult:
@@ -273,12 +337,18 @@ def _prepare(s: ReplaySession) -> None:
     if nan_seen:
         warnings.append("Strategy produced NaN signals; treated as flat.")
 
-    bcfg = cfg.to_backtest_config()
-    algo_portfolio, _, resolved_params2, _ = backtest_service.run_engine(bcfg, bars, signals=masked)
-    algo_targets = algo_portfolio.data["target_position"].tolist()
-    algo_min_cash = float(algo_portfolio.data["cash"].min())
-
-    events = derive_signal_events(bars, masked, algo_targets, start_index=start_index)
+    if cfg.mode == "options":
+        # Options account has no share-based algo target; the algo baseline is
+        # computed at score time via OptionsEventDrivenEngine.
+        algo_targets: List[float] = []
+        algo_min_cash = 0.0
+        events = derive_signal_events(bars, masked, None, start_index=start_index)
+    else:
+        bcfg = cfg.to_backtest_config()
+        algo_portfolio, _, resolved_params2, _ = backtest_service.run_engine(bcfg, bars, signals=masked)
+        algo_targets = algo_portfolio.data["target_position"].tolist()
+        algo_min_cash = float(algo_portfolio.data["cash"].min())
+        events = derive_signal_events(bars, masked, algo_targets, start_index=start_index)
     causality = audit_causality(strategy, bars)
     if not causality.get("causal", True):
         idx = causality.get("first_divergence_index")
@@ -330,6 +400,7 @@ def create_session(req: CreateReplaySessionRequest) -> Dict[str, Any]:
         cursor=start_index,
         high_water=start_index,
         orders=[],
+        option_orders=[],
         data_fingerprint="",
         strategy_fingerprint="",
         bars=bars,
@@ -453,6 +524,101 @@ def _account_dict(s: ReplaySession, led: LedgerResult, cursor: int) -> Dict[str,
     }
 
 
+def _option_order_dict(o: OptionOrder) -> Dict[str, Any]:
+    return {
+        "id": o.id,
+        "bar_index": o.bar_index,
+        "action": o.action,
+        "structure_type": o.structure_type,
+        "selection": o.selection,
+        "short_delta": o.short_delta,
+        "pct_otm": o.pct_otm,
+        "width": o.width,
+        "strikes": list(o.strikes) if o.strikes else None,
+        "dte_bars": o.dte_bars,
+        "contracts": o.contracts,
+        "grid_spacing": o.grid_spacing,
+        "target_structure_id": o.target_structure_id,
+        "note": o.note,
+        "placed_at": o.placed_at,
+    }
+
+
+def _option_fill_dict(f, intraday: bool) -> Dict[str, Any]:
+    t = int(f.timestamp.timestamp()) if intraday else f.timestamp.strftime("%Y-%m-%d")
+    cn = backtest_service._clean_num
+    return {
+        "order_id": f.order_id,
+        "structure_id": f.structure_id,
+        "decision_index": f.decision_index,
+        "fill_index": f.fill_index,
+        "t": t,
+        "action": f.action,
+        "structure_type": f.structure_type,
+        "spot": cn(f.spot),
+        "net_cash": cn(f.net_cash),
+        "costs": cn(f.costs),
+        "cash_after": cn(f.cash_after),
+        "realized_pnl": cn(f.realized_pnl),
+    }
+
+
+def _options_account_dict(s: ReplaySession, led: OptionsLedgerResult, cursor: int) -> Dict[str, Any]:
+    cn = backtest_service._clean_num
+    close = s.bars[cursor].close
+    iv_series = build_iv_series(s.bars, **{k: v for k, v in _opt_vol_kwargs(s.config).items()
+                                           if k != "margin_policy" and k != "risk_free_rate"})
+    r = s.config.vol.risk_free_rate if s.config.vol else 0.04
+    sigma = iv_series[cursor] if cursor < len(iv_series) else 0.2
+
+    positions = []
+    net = {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
+    max_risk = 0.0
+    for st in led.open_structures:
+        marked = mark_structure(st, close, cursor, r, sigma)
+        for k in net:
+            net[k] += marked["greeks"][k]
+        ml = st.max_loss
+        risk = abs(ml) if ml != float("-inf") else float("inf")
+        if risk != float("inf"):
+            max_risk += risk
+        positions.append({
+            "id": st.id,
+            "structure_type": st.structure_type,
+            "contracts": st.contracts,
+            "open_index": st.open_index,
+            "expiry_index": st.expiry_index,
+            "dte_bars": max(st.expiry_index - cursor, 0),
+            "value": cn(marked["value"]),
+            "max_risk": cn(risk) if risk != float("inf") else None,
+            "breakevens": [cn(b) for b in st.breakevens],
+            "greeks": {k: cn(v) for k, v in marked["greeks"].items()},
+            "legs": [{
+                "kind": lm["kind"], "strike": cn(lm["strike"]), "quantity": lm["quantity"],
+                "dte_bars": lm["dte_bars"], "mark": cn(lm["mark"]), "value": cn(lm["value"]),
+                "delta": cn(lm["delta"]), "theta": cn(lm["theta"]), "vega": cn(lm["vega"]),
+            } for lm in marked["legs"]],
+        })
+
+    equity = led.final_equity
+    return {
+        "mode": "options",
+        "cash": cn(led.final_cash),
+        "equity": cn(equity),
+        "net_liq": cn(equity),
+        "unrealized_pnl": cn(led.unrealized_pnl),
+        "realized_pnl": cn(led.realized_pnl),
+        "total_return": cn(equity / s.config.capital - 1.0),
+        "max_risk": cn(max_risk),
+        "buying_power_used": cn(max_risk),
+        "net_delta": cn(net["delta"]),
+        "net_gamma": cn(net["gamma"]),
+        "net_theta": cn(net["theta"]),
+        "net_vega": cn(net["vega"]),
+        "positions": positions,
+    }
+
+
 def _next_event(s: ReplaySession, cursor: int) -> Optional[Dict[str, Any]]:
     for e in s.signal_events:
         if e.index > cursor:
@@ -462,11 +628,33 @@ def _next_event(s: ReplaySession, cursor: int) -> Optional[Dict[str, Any]]:
 
 def _state_payload(s: ReplaySession) -> Dict[str, Any]:
     cursor = max(s.start_index, min(s.cursor, len(s.bars) - 1))
+    if s.is_options:
+        led = _options_ledger(s, upto=cursor)
+        equity = led.portfolio.equity_curve
+        tail = [backtest_service._clean_num(v) for v in equity.tolist()[-500:]]
+        return {
+            "session_id": s.id,
+            "mode": "options",
+            "cursor": cursor,
+            "high_water": s.high_water,
+            "start_index": s.start_index,
+            "total_bars": len(s.bars),
+            "at_end": cursor >= len(s.bars) - 1,
+            "current_signal": backtest_service._clean_num(s.masked[cursor]),
+            "next_signal_event": _next_event(s, cursor),
+            "options_account": _options_account_dict(s, led, cursor),
+            "option_orders": [_option_order_dict(o) for o in s.option_orders],
+            "option_fills": [_option_fill_dict(f, s.intraday) for f in led.fills],
+            "equity_tail": tail,
+            "stale": s.stale,
+            "warnings": s.warnings,
+        }
     led = _ledger(s, upto=cursor)
     equity = led.portfolio.equity_curve
     tail = [backtest_service._clean_num(v) for v in equity.tolist()[-500:]]
     return {
         "session_id": s.id,
+        "mode": "equity",
         "cursor": cursor,
         "high_water": s.high_water,
         "start_index": s.start_index,
@@ -510,6 +698,7 @@ def _create_payload(s: ReplaySession) -> Dict[str, Any]:
     total = len(s.bars)
     payload = {
         "session_id": s.id,
+        "mode": s.config.mode,
         "total_bars": total,
         "start_index": s.start_index,
         "cursor": s.cursor,
@@ -524,13 +713,17 @@ def _create_payload(s: ReplaySession) -> Dict[str, Any]:
         },
         "strategy_name": s.strategy_name,
         "params": s.resolved_params,
+        "options_config": s.config.options.model_dump() if s.config.options else None,
         "signal_events": [_event_dict(e, s.intraday) for e in s.signal_events],
         "causality": s.causality,
         "warnings": s.warnings,
         "chunk_size": DEFAULT_BAR_CHUNK,
         "bars": _bars_payload(s, 0, total) if total <= DEFAULT_BAR_CHUNK else None,
-        "account": _account_dict(s, _ledger(s, upto=s.cursor), s.cursor),
     }
+    if s.is_options:
+        payload["options_account"] = _options_account_dict(s, _options_ledger(s, upto=s.cursor), s.cursor)
+    else:
+        payload["account"] = _account_dict(s, _ledger(s, upto=s.cursor), s.cursor)
     return payload
 
 
@@ -578,6 +771,8 @@ def get_bars(sid: str, start: int = 0, count: int = DEFAULT_BAR_CHUNK) -> Dict[s
 def submit_order(sid: str, req: ReplayOrderRequest) -> Dict[str, Any]:
     with _LOCK:
         s = _require(sid)
+        if s.is_options:
+            raise OrderRejected("This is an options session; use option orders instead.")
         bar = req.bar_index
         if bar < s.start_index:
             raise OrderRejected(f"Trading starts at bar {s.start_index}.")
@@ -633,9 +828,154 @@ def submit_order(sid: str, req: ReplayOrderRequest) -> Dict[str, Any]:
         }
 
 
+def _require_options(s: ReplaySession) -> None:
+    if not s.is_options:
+        raise OrderRejected("This is an equity session; use share orders instead.")
+
+
+def submit_option_order(sid: str, req) -> Dict[str, Any]:
+    """Open or close an option structure at ``req.bar_index`` (fills at +1)."""
+    with _LOCK:
+        s = _require(sid)
+        _require_options(s)
+        bar = req.bar_index
+        if bar < s.start_index:
+            raise OrderRejected(f"Trading starts at bar {s.start_index}.")
+        if bar < s.high_water:
+            raise OrderRejected(
+                f"You've already made decisions at or past bar {s.high_water}. "
+                "Use rewind to change an earlier trade."
+            )
+        if bar + 1 >= len(s.bars):
+            raise OrderRejected("No bar after this one to fill against — this is the end of the data.")
+
+        if req.action == "open":
+            if req.structure is None:
+                raise OrderRejected("An 'open' order needs a structure template.")
+            spec = _structure_spec_from_cfg(req.structure)
+            if spec.contracts < 1:
+                raise OrderRejected("Contracts must be at least 1.")
+            oid = f"opt{len(s.option_orders) + 1}_{bar}"
+            order = OptionOrder(
+                id=oid, bar_index=bar, action="open",
+                structure_type=spec.structure_type, selection=spec.selection,
+                short_delta=spec.short_delta, pct_otm=spec.pct_otm, width=spec.width,
+                strikes=spec.strikes, dte_bars=spec.dte_bars, contracts=spec.contracts,
+                grid_spacing=spec.grid_spacing, note=req.note, placed_at=_now_iso(),
+            )
+        else:  # close
+            if not req.target_structure_id:
+                raise OrderRejected("A 'close' order needs target_structure_id.")
+            oid = f"optc{len(s.option_orders) + 1}_{bar}"
+            order = OptionOrder(
+                id=oid, bar_index=bar, action="close",
+                target_structure_id=req.target_structure_id,
+                note=req.note, placed_at=_now_iso(),
+            )
+
+        candidate = list(s.option_orders) + [order]
+        try:
+            led = build_options_ledger(
+                s.bars, candidate, upto_index=bar + 1, capital=s.config.capital,
+                exec_model=_exec_model(s.config), timing=s.config.timing,
+                **_opt_vol_kwargs(s.config),
+            )
+        except ValueError as e:
+            raise OrderRejected(str(e))
+
+        # Buying-power / defined-risk enforcement on open.
+        if req.action == "open":
+            policy = s.config.vol.margin_policy if s.config.vol else "defined_risk"
+            new_struct = next((st for st in led.open_structures if st.id == order.id), None)
+            if new_struct is not None:
+                ml = new_struct.max_loss
+                if ml == float("-inf") and policy != "reg_t":
+                    raise OrderRejected(
+                        "This is an undefined-risk (naked short) structure. Enable Reg-T "
+                        "margin, or trade a defined-risk spread instead."
+                    )
+            if led.max_risk > s.config.capital + CASH_EPS and policy == "defined_risk":
+                raise OrderRejected(
+                    f"Not enough buying power: this position risks "
+                    f"${led.max_risk:,.0f} vs ${s.config.capital:,.0f} capital."
+                )
+
+        s.option_orders.append(order)
+        _recompute_high_water(s)
+        s.cursor = max(s.cursor, bar + 1)
+        _invalidate(s)
+        _persist(s)
+        state = _state_payload(s)
+        fill = next((f for f in led.fills if f.order_id == oid), None)
+        return {
+            "accepted": True,
+            "fill": _option_fill_dict(fill, s.intraday) if fill else None,
+            "state": state,
+        }
+
+
+def preview_option(sid: str, req) -> Dict[str, Any]:
+    """Dry-run: price a structure template against a session bar (no order)."""
+    with _LOCK:
+        s = _require(sid)
+        _require_options(s)
+        bar = max(s.start_index, min(req.bar_index, len(s.bars) - 1))
+        spec = _structure_spec_from_cfg(req.structure)
+        from options.structures import build_structure
+        r = s.config.vol.risk_free_rate if s.config.vol else 0.04
+        iv_series = build_iv_series(s.bars, **{k: v for k, v in _opt_vol_kwargs(s.config).items()
+                                               if k not in ("margin_policy", "risk_free_rate")})
+        spot = s.bars[bar].close
+        sigma = iv_series[bar] if bar < len(iv_series) else 0.2
+        structure = build_structure(spec, S=spot, sigma=sigma, r=r, open_index=bar, structure_id="preview")
+        marked = mark_structure(structure, spot, bar, r, sigma)
+        cn = backtest_service._clean_num
+        ml = structure.max_loss
+        mp = structure.max_profit
+        # payoff curve across a spot range
+        lo = spot * 0.8
+        hi = spot * 1.2
+        payoff = []
+        for i in range(41):
+            sp = lo + (hi - lo) * i / 40.0
+            payoff.append({"s": cn(sp), "pnl": cn(structure._payoff_at(sp))})
+        return {
+            "structure": spec.structure_type,
+            "spot": cn(spot),
+            "iv": cn(sigma),
+            "dte": spec.dte_bars,
+            "net_price": cn(structure.net_premium_per_share),
+            "net_is_credit": structure.net_premium_per_share < 0,
+            "contracts": structure.contracts,
+            "multiplier": 100,
+            "max_profit": cn(mp) if mp != float("inf") else None,
+            "max_loss": cn(ml) if ml != float("-inf") else None,
+            "breakevens": [cn(b) for b in structure.breakevens],
+            "greeks": {k: cn(v) for k, v in marked["greeks"].items()},
+            "legs": [{
+                "kind": lm["kind"], "action": "buy" if lm["quantity"] > 0 else "sell",
+                "strike": cn(lm["strike"]), "quantity": lm["quantity"], "dte": lm["dte_bars"],
+                "mark": cn(lm["mark"]), "iv": cn(sigma),
+                "greeks": {"delta": cn(lm["delta"]), "gamma": cn(lm["gamma"]) if "gamma" in lm else 0.0,
+                           "theta": cn(lm["theta"]), "vega": cn(lm["vega"])},
+            } for lm in marked["legs"]],
+            "payoff": payoff,
+            "warnings": [],
+        }
+
+
 def undo_last_order(sid: str) -> Dict[str, Any]:
     with _LOCK:
         s = _require(sid)
+        if s.is_options:
+            if not s.option_orders:
+                raise OrderRejected("No orders to undo.")
+            s.option_orders.pop()
+            _recompute_high_water(s)
+            s.cursor = min(s.cursor, len(s.bars) - 1)
+            _invalidate(s)
+            _persist(s)
+            return _state_payload(s)
         if not s.orders:
             raise OrderRejected("No orders to undo.")
         s.orders.pop()
@@ -676,13 +1016,15 @@ def rewind(sid: str, to_index: int, confirm_discard_orders: bool = False) -> Dic
         s = _require(sid)
         if to_index < s.start_index:
             raise OrderRejected(f"Cannot rewind before the start bar ({s.start_index}).")
-        dropped = [o for o in s.orders if o.bar_index >= to_index]
+        dropped = ([o for o in s.orders if o.bar_index >= to_index]
+                   + [o for o in s.option_orders if o.bar_index >= to_index])
         if dropped and not confirm_discard_orders:
             raise OrderRejected(
                 f"Rewinding to bar {to_index} would discard {len(dropped)} order(s). "
                 "Confirm to proceed."
             )
         s.orders = [o for o in s.orders if o.bar_index < to_index]
+        s.option_orders = [o for o in s.option_orders if o.bar_index < to_index]
         _recompute_high_water(s)
         s.cursor = max(s.start_index, min(to_index, len(s.bars) - 1))
         _invalidate(s)
@@ -694,6 +1036,7 @@ def reset(sid: str) -> Dict[str, Any]:
     with _LOCK:
         s = _require(sid)
         s.orders = []
+        s.option_orders = []
         s.high_water = s.start_index
         s.cursor = s.start_index
         _invalidate(s)
@@ -726,6 +1069,85 @@ def _track_from_df(df, timing: str, intraday: bool, capital: float) -> Dict[str,
             "benchmark": [cn(v) for v in benchmark.tolist()],
         },
         "trades": backtest_service._trades_payload(trades),
+    }
+
+
+def _options_track_from_led(led: OptionsLedgerResult, intraday: bool, capital: float) -> Dict[str, Any]:
+    """A scoreboard track for an options ledger result (user or algo)."""
+    df = led.portfolio.data
+    trades = reconstruct_option_trades(led.closed_trades)
+    summary = PerformanceMetrics.get_advanced_summary(df, trades)
+    equity = df["equity"]
+    close = df["close"]
+    benchmark = PerformanceMetrics.get_benchmark_equity(close, capital)
+    cn = backtest_service._clean_num
+    return {
+        "summary": backtest_service._summary_payload(summary),
+        "series": {
+            "dates": iso_index(equity.index, intraday=intraday),
+            "equity": [cn(v) for v in equity.tolist()],
+            "benchmark": [cn(v) for v in benchmark.tolist()],
+        },
+        "option_trades": backtest_service._option_trades_payload(trades),
+        "realized_pnl": cn(led.realized_pnl),
+        "unrealized_pnl": cn(led.unrealized_pnl),
+    }
+
+
+def _score_options(s: ReplaySession, cursor: int) -> Dict[str, Any]:
+    cap = s.config.capital
+    intraday = s.intraday
+
+    # USER — the options ledger up to the cursor.
+    user_led = _options_ledger(s, upto=cursor)
+    user = _options_track_from_led(user_led, intraday, cap)
+
+    # ALGO — the configured strategy traded as the same structure template.
+    from backtest.execution import ExecutionModel as _EM
+    strategy, _ = build_strategy(s.config.strategy, s.config.params, allow_short=s.config.short)
+    engine = OptionsEventDrivenEngine(
+        strategy=strategy,
+        structure=_structure_spec_from_cfg(s.config.options),
+        execution_model=_exec_model(s.config),
+        initial_capital=cap,
+        execution_timing=s.config.timing,
+        **_opt_vol_kwargs(s.config),
+    )
+    algo_led = engine.run(s.bars[: cursor + 1], signals=s.masked[: cursor + 1])
+    algo = _options_track_from_led(algo_led, intraday, cap)
+
+    # BUY & HOLD — underlying shares (different instrument, labelled as such).
+    bh_order = [ReplayOrder(id="bh", bar_index=s.start_index, side="buy",
+                            qty_mode="fraction", qty_value=1.0)]
+    bh_led = build_ledger(
+        s.bars, s.masked, bh_order, upto_index=cursor, capital=cap,
+        exec_model=_exec_model(s.config), timing=s.config.timing,
+        min_trade_shares=s.config.min_trade_shares,
+    )
+    buy_hold = _track_from_df(bh_led.portfolio.data, s.config.timing, intraday, cap)
+
+    def _delta(a, b):
+        return {k: backtest_service._clean_num(a["summary"].get(k, 0) - b["summary"].get(k, 0))
+                for k in ("Total Return", "Sharpe Ratio", "Max Drawdown")}
+
+    return {
+        "cursor": cursor,
+        "mode": "options",
+        "bars_elapsed": cursor - s.start_index,
+        "start_index": s.start_index,
+        "user": user,
+        "algo": algo,
+        "buy_hold": buy_hold,
+        "delta": {"vs_algo": _delta(user, algo), "vs_buy_hold": _delta(user, buy_hold)},
+        "behaviour": _behaviour(s, cursor),
+        "fairness": {
+            "note": "Buy & Hold is the underlying stock, a different instrument than the "
+                    "options positions — compare directionally, not one-for-one.",
+        },
+        "warnings": s.warnings + [
+            "Options are priced with a Black-Scholes synthetic model (realized-vol IV, "
+            "no vol risk premium), so short-premium P&L is understated vs. a real market."
+        ],
     }
 
 
@@ -770,6 +1192,8 @@ def score(sid: str, upto: Optional[int] = None) -> Dict[str, Any]:
     with _LOCK:
         s = _require(sid)
         cursor = s.cursor if upto is None else max(s.start_index, min(upto, len(s.bars) - 1))
+        if s.is_options:
+            return _score_options(s, cursor)
         cap = s.config.capital
         timing = s.config.timing
         intraday = s.intraday
@@ -894,6 +1318,7 @@ def _persist(s: ReplaySession) -> None:
         "cursor": s.cursor,
         "high_water": s.high_water,
         "orders": [_order_dict(o) for o in s.orders],
+        "option_orders": [_option_order_dict(o) for o in s.option_orders],
         "data_fingerprint": s.data_fingerprint,
         "strategy_fingerprint": s.strategy_fingerprint,
     }
@@ -930,6 +1355,7 @@ def rehydrate_all() -> List[str]:
                 cursor=data["cursor"],
                 high_water=data["high_water"],
                 orders=[ReplayOrder(**o) for o in data.get("orders", [])],
+                option_orders=[OptionOrder(**o) for o in data.get("option_orders", [])],
                 data_fingerprint=data.get("data_fingerprint", ""),
                 strategy_fingerprint=data.get("strategy_fingerprint", ""),
                 bars=bars,

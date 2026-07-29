@@ -21,6 +21,8 @@ from desktop.backend.schemas import (
     CompareRequest,
     CreateReplaySessionRequest,
     FetchRequest,
+    OptionPreviewRequest,
+    ReplayOptionOrderRequest,
     ReplayOrderRequest,
     RewindRequest,
     RobustnessRequest,
@@ -179,6 +181,15 @@ def get_data_search(q: str, limit: int = 10):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+# --- Options metadata -------------------------------------------------------
+
+
+@app.get("/api/options/structures")
+def get_option_structures():
+    from options.structures import CATALOG
+    return {"structures": CATALOG}
+
+
 # --- Replay / manual trading ------------------------------------------------
 # NOTE: /orders/undo must be declared before /orders/{order_id} so "undo" isn't
 # captured as an order id.
@@ -227,6 +238,30 @@ def get_replay_bars(sid: str, start: int = 0, count: int = replay_service.DEFAUL
 def post_replay_order(sid: str, req: ReplayOrderRequest):
     try:
         return replay_service.submit_order(sid, req)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+    except replay_service.OrderRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/replay/sessions/{sid}/options/preview")
+def post_replay_option_preview(sid: str, req: OptionPreviewRequest):
+    try:
+        return replay_service.preview_option(sid, req)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+    except replay_service.OrderRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/replay/sessions/{sid}/options/orders")
+def post_replay_option_order(sid: str, req: ReplayOptionOrderRequest):
+    try:
+        return replay_service.submit_option_order(sid, req)
     except replay_service.SessionNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except replay_service.SessionStale as e:

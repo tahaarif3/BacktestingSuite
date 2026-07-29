@@ -5,6 +5,7 @@ import type {
   BacktestResult,
   CompareRun,
   DataFile,
+  OptionsBacktestResult,
   RobustnessResult,
   SizerSpec,
   StrategySpec,
@@ -29,6 +30,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
   commission_per_share: 0,
   min_trade_shares: 1e-8,
   timing: "next_open",
+  mode: "equity",
   data: { source: "file", interval: "1d" },
 };
 
@@ -41,7 +43,7 @@ export default function App() {
   const [dataFiles, setDataFiles] = useState<DataFile[]>([]);
 
   const [config, setConfig] = useState<BacktestConfig>(DEFAULT_CONFIG);
-  const [result, setResult] = useState<BacktestResult | null>(null);
+  const [result, setResult] = useState<BacktestResult | OptionsBacktestResult | null>(null);
   const [robustness, setRobustness] = useState<RobustnessResult | null>(null);
   const [compareConfigs, setCompareConfigs] = useState<{ cfg: BacktestConfig; label: string }[]>([]);
   const [compareRuns, setCompareRuns] = useState<CompareRun[]>([]);

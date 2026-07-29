@@ -5,6 +5,10 @@ import type {
   DataFile,
   IntervalSpec,
   JournalEntry,
+  OptionOrderRequest,
+  OptionPreview,
+  OptionsBacktestResult,
+  OptionStructureMeta,
   ReplayBars,
   ReplayOrderRequest,
   ReplayOrderResponse,
@@ -96,7 +100,8 @@ export const api = {
   fetchTicker: (ticker: string, start: string, end: string, interval = "1d") =>
     post<DataFile>("/api/data/fetch", { ticker, start, end, interval }),
 
-  runBacktest: (config: BacktestConfig) => post<BacktestResult>("/api/backtest/run", config),
+  runBacktest: (config: BacktestConfig) =>
+    post<BacktestResult | OptionsBacktestResult>("/api/backtest/run", config),
 
   runRobustness: (config: BacktestConfig, tests: string[], mcIterations = 1000) =>
     post<RobustnessResult>("/api/robustness/run", {
@@ -176,4 +181,14 @@ export const api = {
 
   deleteReplaySession: (id: string) =>
     del<{ ok: boolean }>(`/api/replay/sessions/${id}`),
+
+  // --- Options ---
+  listOptionStructures: () =>
+    get<{ structures: OptionStructureMeta[] }>("/api/options/structures").then((r) => r.structures),
+
+  previewOption: (id: string, req: { bar_index: number; structure: unknown }) =>
+    post<OptionPreview>(`/api/replay/sessions/${id}/options/preview`, req),
+
+  submitOptionOrder: (id: string, order: OptionOrderRequest) =>
+    post<ReplayOrderResponse>(`/api/replay/sessions/${id}/options/orders`, order),
 };

@@ -1,6 +1,17 @@
-import { useMemo, useState } from "react";
-import type { DataFile, ReplaySessionConfig, SizerSpec, StrategySpec } from "../../types";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  DataFile,
+  OptionStructureConfig,
+  OptionStructureMeta,
+  ReplaySessionConfig,
+  SizerSpec,
+  StrategySpec,
+  TradeMode,
+  VolModelConfig,
+} from "../../types";
+import { api } from "../../api";
 import TickerPicker, { type TickerSelection } from "../TickerPicker";
+import OptionsConfig, { DEFAULT_OPTION_STRUCTURE, DEFAULT_VOL } from "../options/OptionsConfig";
 
 interface Props {
   strategies: StrategySpec[];
@@ -35,6 +46,14 @@ export default function ReplaySetup(props: Props) {
   const [timing, setTiming] = useState("next_open");
   const [warmup, setWarmup] = useState(100);
   const [margin, setMargin] = useState<"cash_only" | "unlimited">("cash_only");
+  const [tradeMode, setTradeMode] = useState<TradeMode>("equity");
+  const [optStructure, setOptStructure] = useState<OptionStructureConfig>(DEFAULT_OPTION_STRUCTURE);
+  const [optVol, setOptVol] = useState<VolModelConfig>(DEFAULT_VOL);
+  const [structures, setStructures] = useState<OptionStructureMeta[]>([]);
+
+  useEffect(() => {
+    api.listOptionStructures().then(setStructures).catch(() => {});
+  }, []);
 
   const spec = useMemo(() => strategies.find((s) => s.id === strategy), [strategies, strategy]);
   const sizerSpec = sizers.find((s) => s.id === sizer);
@@ -72,6 +91,9 @@ export default function ReplaySetup(props: Props) {
     warmup_bars: warmup,
     margin_policy: margin,
     whole_shares: false,
+    mode: tradeMode,
+    options: tradeMode === "options" ? optStructure : null,
+    vol: tradeMode === "options" ? optVol : null,
   });
 
   return (
@@ -153,6 +175,25 @@ export default function ReplaySetup(props: Props) {
               Allow shorting
             </label>
           </div>
+        )}
+
+        <div className="section-title">Trade mode</div>
+        <div className="seg">
+          <button className={`seg-btn ${tradeMode === "equity" ? "active" : ""}`} onClick={() => setTradeMode("equity")}>
+            Equity (shares)
+          </button>
+          <button className={`seg-btn ${tradeMode === "options" ? "active" : ""}`} onClick={() => setTradeMode("options")}>
+            Options
+          </button>
+        </div>
+        {tradeMode === "options" && (
+          <OptionsConfig
+            structures={structures}
+            value={optStructure}
+            onChange={setOptStructure}
+            vol={optVol}
+            onVolChange={setOptVol}
+          />
         )}
 
         <div className="section-title">Account &amp; playback</div>
