@@ -76,6 +76,7 @@ strat/*
 !strat/bollinger_bands.py
 !strat/macd.py
 !strat/genetic_programming.py
+!strat/rs_breakout.py
 user_strategies/
 *secret*
 *private*

@@ -11,7 +11,7 @@ from PyInstaller.utils.hooks import collect_submodules, collect_all
 REPO_ROOT = os.path.abspath(os.getcwd())
 
 hiddenimports = []
-for pkg in ["data", "backtest", "analytics", "validation", "domain", "presentation"]:
+for pkg in ["data", "backtest", "analytics", "validation", "domain", "presentation", "options"]:
     hiddenimports += collect_submodules(pkg)
 
 # strat/ is deliberately NOT swept with collect_submodules: it may contain
@@ -27,6 +27,7 @@ PUBLIC_STRAT_MODULES = [
     "strat.bollinger_bands",
     "strat.macd",
     "strat.genetic_programming",
+    "strat.rs_breakout",
 ]
 hiddenimports += PUBLIC_STRAT_MODULES
 hiddenimports += ["strategy_registry", "uvicorn", "uvicorn.logging", "uvicorn.loops.auto",

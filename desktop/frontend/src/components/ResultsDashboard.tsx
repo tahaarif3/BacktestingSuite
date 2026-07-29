@@ -1,16 +1,22 @@
-import type { BacktestResult } from "../types";
+import type { BacktestResult, OptionsBacktestResult } from "../types";
 import { METRIC_FORMAT, metricTone } from "../format";
 import MetricCard from "./MetricCard";
 import TradeTable from "./TradeTable";
+import OptionTradeTable from "./options/OptionTradeTable";
 import Plot, { PALETTE } from "./Plot";
 
-export default function ResultsDashboard({ result }: { result: BacktestResult | null }) {
+type AnyResult = BacktestResult | OptionsBacktestResult;
+
+export default function ResultsDashboard({ result }: { result: AnyResult | null }) {
   if (!result) {
     return <div className="empty">Configure a strategy and click “Run Backtest” to see results.</div>;
   }
 
   const s = result.series;
   const tone = metricTone;
+  const isOptions = (result as OptionsBacktestResult).mode === "options";
+  const optionTrades = (result as OptionsBacktestResult).option_trades ?? [];
+  const equityTrades = (result as BacktestResult).trades ?? [];
 
   return (
     <div>
@@ -20,6 +26,14 @@ export default function ResultsDashboard({ result }: { result: BacktestResult | 
           return <MetricCard key={k} label={k} value={meta ? meta.fmt(v) : String(v)} tone={tone(k, v)} />;
         })}
       </div>
+
+      {isOptions && (
+        <div className="card insight">
+          Options mode: positions are priced with a Black-Scholes synthetic model
+          (realized-vol IV, no volatility risk premium), so short-premium P&amp;L is understated
+          vs. a real market. Returns are on capital; the benchmark is the underlying stock.
+        </div>
+      )}
 
       <div className="card">
         <h3>Equity Curve vs. Buy &amp; Hold Benchmark</h3>
@@ -56,8 +70,17 @@ export default function ResultsDashboard({ result }: { result: BacktestResult | 
       </div>
 
       <div className="card">
-        <h3>Trade Log ({result.trades.length})</h3>
-        <TradeTable trades={result.trades} />
+        {isOptions ? (
+          <>
+            <h3>Option Trades ({optionTrades.length})</h3>
+            <OptionTradeTable trades={optionTrades} />
+          </>
+        ) : (
+          <>
+            <h3>Trade Log ({equityTrades.length})</h3>
+            <TradeTable trades={equityTrades} />
+          </>
+        )}
       </div>
     </div>
   );

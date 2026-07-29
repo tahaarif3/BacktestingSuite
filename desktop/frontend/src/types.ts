@@ -39,6 +39,31 @@ export interface DataConfig {
   interval?: string;
 }
 
+export type TradeMode = "equity" | "options";
+export type StrikeMode = "delta" | "pct_otm" | "absolute";
+
+export interface OptionStructureConfig {
+  structure_type: string;
+  selection: StrikeMode;
+  short_delta: number;
+  pct_otm: number;
+  width: number;
+  strikes?: number[] | null;
+  dte_bars: number;
+  contracts: number;
+  grid_spacing: number;
+}
+
+export interface VolModelConfig {
+  risk_free_rate: number;
+  iv_window: number;
+  iv_multiplier: number;
+  iv_override?: number | null;
+  iv_floor: number;
+  iv_cap: number;
+  margin_policy: "defined_risk" | "reg_t";
+}
+
 export interface BacktestConfig {
   strategy: string;
   params: Record<string, number>;
@@ -51,6 +76,9 @@ export interface BacktestConfig {
   commission_per_share: number;
   min_trade_shares: number;
   timing: string;
+  mode?: TradeMode;
+  options?: OptionStructureConfig | null;
+  vol?: VolModelConfig | null;
   data: DataConfig;
 }
 
@@ -203,6 +231,9 @@ export interface ReplaySessionConfig {
   margin_policy?: "cash_only" | "unlimited";
   whole_shares?: boolean;
   label?: string | null;
+  mode?: TradeMode;
+  options?: OptionStructureConfig | null;
+  vol?: VolModelConfig | null;
 }
 
 export interface ReplayBars {
@@ -275,17 +306,21 @@ export interface ReplayOrderRecord {
 
 export interface ReplayState {
   session_id: string;
+  mode?: TradeMode;
   cursor: number;
   high_water: number;
   start_index: number;
   total_bars: number;
   at_end: boolean;
   current_signal: number;
-  algo_target_shares: number;
+  algo_target_shares?: number;
   next_signal_event: SignalEvent | null;
-  account: ReplayAccount;
-  orders: ReplayOrderRecord[];
-  fills: ReplayFill[];
+  account?: ReplayAccount;
+  orders?: ReplayOrderRecord[];
+  fills?: ReplayFill[];
+  options_account?: OptionsAccount;
+  option_orders?: OptionOrderRecord[];
+  option_fills?: OptionFill[];
   equity_tail: number[];
   stale: boolean;
   warnings: string[];
@@ -318,7 +353,10 @@ export interface ReplaySessionResponse {
   warnings: string[];
   chunk_size: number;
   bars: ReplayBars | null;
-  account: ReplayAccount;
+  account?: ReplayAccount;
+  mode?: TradeMode;
+  options_account?: OptionsAccount;
+  options_config?: OptionStructureConfig | null;
 }
 
 export interface ReplayOrderRequest {
@@ -338,11 +376,15 @@ export interface ReplayOrderResponse {
 export interface ReplayTrack {
   summary: Summary;
   series: { dates: (number | string)[]; equity: number[]; benchmark: number[] };
-  trades: Trade[];
+  trades?: Trade[];
+  option_trades?: OptionTrade[];
+  realized_pnl?: number;
+  unrealized_pnl?: number;
 }
 
 export interface ReplayScore {
   cursor: number;
+  mode?: TradeMode;
   bars_elapsed: number;
   start_index: number;
   user: ReplayTrack;
@@ -361,9 +403,9 @@ export interface ReplayScore {
     follow_rate: number;
   };
   fairness: {
-    algo_min_cash: number;
-    algo_used_leverage: boolean;
-    user_margin_policy: string;
+    algo_min_cash?: number;
+    algo_used_leverage?: boolean;
+    user_margin_policy?: string;
     note: string | null;
   };
   warnings: string[];
@@ -382,4 +424,173 @@ export interface JournalEntry {
     | null;
   fill: ReplayFill | null;
   verdict: string;
+}
+
+// --- Options ----------------------------------------------------------------
+
+export interface OptionStructureMeta {
+  id: string;
+  name: string;
+  legs: number;
+  direction: "bullish" | "bearish" | "neutral";
+  defined_risk: boolean;
+  net: "debit" | "credit" | "either";
+  needs_width: boolean;
+}
+
+export interface OptionGreeks {
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  rho?: number;
+}
+
+export interface OptionLegView {
+  kind: "call" | "put";
+  action?: "buy" | "sell";
+  strike: number;
+  quantity: number;
+  dte?: number;
+  dte_bars?: number;
+  mark: number;
+  value?: number;
+  iv?: number;
+  delta: number;
+  theta: number;
+  vega: number;
+  gamma?: number;
+  greeks?: OptionGreeks;
+}
+
+export interface PayoffPoint {
+  s: number;
+  pnl: number;
+}
+
+export interface OptionPreview {
+  structure: string;
+  spot: number;
+  iv: number;
+  dte: number;
+  net_price: number;
+  net_is_credit: boolean;
+  contracts: number;
+  multiplier: number;
+  max_profit: number | null;
+  max_loss: number | null;
+  breakevens: number[];
+  greeks: OptionGreeks;
+  legs: OptionLegView[];
+  payoff: PayoffPoint[];
+  warnings: string[];
+}
+
+export interface OptionPosition {
+  id: string;
+  structure_type: string;
+  contracts: number;
+  open_index: number;
+  expiry_index: number;
+  dte_bars: number;
+  value: number;
+  max_risk: number | null;
+  breakevens: number[];
+  greeks: OptionGreeks;
+  legs: OptionLegView[];
+}
+
+export interface OptionsAccount {
+  mode: "options";
+  cash: number;
+  equity: number;
+  net_liq: number;
+  unrealized_pnl: number;
+  realized_pnl: number;
+  total_return: number;
+  max_risk: number;
+  buying_power_used: number;
+  net_delta: number;
+  net_gamma: number;
+  net_theta: number;
+  net_vega: number;
+  positions: OptionPosition[];
+}
+
+export interface OptionFill {
+  order_id: string;
+  structure_id: string;
+  decision_index: number;
+  fill_index: number;
+  t: number | string;
+  action: "open" | "close" | "expiry";
+  structure_type: string;
+  spot: number;
+  net_cash: number;
+  costs: number;
+  cash_after: number;
+  realized_pnl: number;
+}
+
+export interface OptionOrderRecord {
+  id: string;
+  bar_index: number;
+  action: "open" | "close";
+  structure_type: string;
+  selection: StrikeMode;
+  short_delta: number;
+  pct_otm: number;
+  width: number;
+  strikes: number[] | null;
+  dte_bars: number;
+  contracts: number;
+  grid_spacing: number;
+  target_structure_id: string | null;
+  note: string;
+  placed_at: string;
+}
+
+export interface OptionOrderRequest {
+  bar_index: number;
+  action: "open" | "close";
+  structure?: OptionStructureConfig;
+  target_structure_id?: string;
+  note?: string;
+}
+
+export interface OptionTrade {
+  entry_time: string;
+  exit_time: string;
+  structure: string;
+  contracts: number;
+  entry_cash: number;
+  exit_cash: number;
+  pnl_usd: number;
+  pnl_pct: number;
+  max_risk: number;
+  reason: string;
+}
+
+export interface OptionsBacktestResult {
+  strategy: string;
+  strategy_name: string;
+  mode: "options";
+  params: Record<string, unknown>;
+  options_config: OptionStructureConfig | null;
+  summary: Summary;
+  series: Series;
+  option_trades: OptionTrade[];
+  realized_pnl: number;
+  unrealized_pnl: number;
+  max_risk: number;
+  initial_equity: number;
+  final_equity: number;
+}
+
+export interface OptionsReplayTrack {
+  summary: Summary;
+  series: { dates: (number | string)[]; equity: number[]; benchmark: number[] };
+  option_trades: OptionTrade[];
+  realized_pnl: number;
+  unrealized_pnl: number;
 }

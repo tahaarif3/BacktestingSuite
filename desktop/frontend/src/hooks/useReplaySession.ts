@@ -2,6 +2,10 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { api } from "../api";
 import type {
   JournalEntry,
+  OptionFill,
+  OptionOrderRecord,
+  OptionOrderRequest,
+  OptionsAccount,
   ReplayAccount,
   ReplayBars,
   ReplayFill,
@@ -12,6 +16,7 @@ import type {
   ReplaySessionResponse,
   ReplayState,
   SignalEvent,
+  TradeMode,
 } from "../types";
 
 const LS_KEY = "bt.replay.session";
@@ -30,6 +35,7 @@ export type Phase = "setup" | "loading" | "running" | "scored" | "error";
 
 export interface ReplaySessionState {
   phase: Phase;
+  mode: TradeMode;
   sessionId: string | null;
   symbol: string;
   interval: string;
@@ -43,6 +49,9 @@ export interface ReplaySessionState {
   account: ReplayAccount | null;
   orders: ReplayOrderRecord[];
   fills: ReplayFill[];
+  optionsAccount: OptionsAccount | null;
+  optionOrders: OptionOrderRecord[];
+  optionFills: OptionFill[];
   cursor: number;
   highWater: number;
   capital: number;
@@ -56,6 +65,7 @@ export interface ReplaySessionState {
 
 const initial: ReplaySessionState = {
   phase: "setup",
+  mode: "equity",
   sessionId: null,
   symbol: "",
   interval: "1d",
@@ -69,6 +79,9 @@ const initial: ReplaySessionState = {
   account: null,
   orders: [],
   fills: [],
+  optionsAccount: null,
+  optionOrders: [],
+  optionFills: [],
   cursor: 0,
   highWater: 0,
   capital: 100000,
@@ -94,9 +107,12 @@ type Action =
 function applyState(s: ReplaySessionState, st: ReplayState): ReplaySessionState {
   return {
     ...s,
-    account: st.account,
-    orders: st.orders,
-    fills: st.fills,
+    account: st.account ?? null,
+    orders: st.orders ?? [],
+    fills: st.fills ?? [],
+    optionsAccount: st.options_account ?? null,
+    optionOrders: st.option_orders ?? [],
+    optionFills: st.option_fills ?? [],
     cursor: st.cursor,
     highWater: st.high_water,
     equityTail: st.equity_tail,
@@ -111,9 +127,14 @@ function reducer(s: ReplaySessionState, a: Action): ReplaySessionState {
       return { ...initial, phase: "loading" };
     case "started": {
       const causal = a.resp.causality?.causal ?? true;
+      const mode: TradeMode = a.resp.mode ?? "equity";
+      const equity = mode === "options"
+        ? (a.resp.options_account?.equity ?? 100000)
+        : (a.resp.account?.equity ?? 100000);
       return {
         ...s,
         phase: "running",
+        mode,
         sessionId: a.resp.session_id,
         symbol: a.resp.instrument.symbol,
         interval: a.resp.instrument.interval,
@@ -126,13 +147,16 @@ function reducer(s: ReplaySessionState, a: Action): ReplaySessionState {
         causalityWarning: causal
           ? null
           : `This strategy may use future data (first divergence at bar ${a.resp.causality.first_divergence_index}). Its signals may not be realistic.`,
-        account: a.resp.account,
+        account: a.resp.account ?? null,
         orders: [],
         fills: [],
+        optionsAccount: a.resp.options_account ?? null,
+        optionOrders: [],
+        optionFills: [],
         cursor: a.resp.cursor,
         highWater: a.resp.start_index,
-        capital: a.resp.account.equity,
-        equityTail: [a.resp.account.equity],
+        capital: equity,
+        equityTail: [equity],
         score: null,
         journal: [],
         submitting: false,
@@ -215,6 +239,33 @@ export function useReplaySession() {
       return null;
     }
   }, []);
+
+  const submitOptionOrder = useCallback(async (order: OptionOrderRequest): Promise<ReplayState | null> => {
+    const id = idRef.current;
+    if (!id) return null;
+    dispatch({ t: "orderPending" });
+    try {
+      const resp = await api.submitOptionOrder(id, order);
+      dispatch({ t: "stateSynced", state: resp.state });
+      return resp.state;
+    } catch (e) {
+      dispatch({ t: "orderErr", message: (e as Error).message });
+      return null;
+    }
+  }, []);
+
+  const previewOption = useCallback(
+    async (barIndex: number, structure: unknown) => {
+      const id = idRef.current;
+      if (!id) return null;
+      try {
+        return await api.previewOption(id, { bar_index: barIndex, structure });
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
 
   const syncState = useCallback((st: ReplayState) => dispatch({ t: "stateSynced", state: st }), []);
 
@@ -326,6 +377,8 @@ export function useReplaySession() {
     state,
     start,
     submitOrder,
+    submitOptionOrder,
+    previewOption,
     syncState,
     undo,
     rewind,

@@ -13,6 +13,7 @@ from strat.rsi_mean_reversion import RSIMeanReversionStrategy
 from strat.bollinger_bands import BollingerBandsStrategy
 from strat.macd import MACDStrategy
 from strat.genetic_programming import GeneticProgrammingStrategy
+from strat.rs_breakout import RSBreakoutStrategy
 
 __all__ = [
     "BaseStrategy",
@@ -23,4 +24,5 @@ __all__ = [
     "BollingerBandsStrategy",
     "MACDStrategy",
     "GeneticProgrammingStrategy",
+    "RSBreakoutStrategy",
 ]

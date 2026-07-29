@@ -2,6 +2,7 @@ import type { JournalEntry, ReplayScore } from "../../types";
 import { METRIC_FORMAT, metricTone, usd } from "../../format";
 import MetricCard from "../MetricCard";
 import TradeTable from "../TradeTable";
+import OptionTradeTable from "../options/OptionTradeTable";
 import Plot, { PALETTE } from "../Plot";
 import DecisionJournal from "./DecisionJournal";
 
@@ -24,6 +25,7 @@ export default function ReplayScoreboard({ score, journal, intraday, onResume, o
 
   const b = score.behaviour;
   const overridePnl = score.delta.vs_algo["Total Return"];
+  const isOptions = score.mode === "options";
 
   return (
     <div className="replay-scoreboard">
@@ -106,15 +108,26 @@ export default function ReplayScoreboard({ score, journal, intraday, onResume, o
       <div className="card">
         <h3>Fairness</h3>
         <div className="hint">
-          Algo minimum cash: {usd(score.fairness.algo_min_cash)} · leverage used:{" "}
-          {score.fairness.algo_used_leverage ? "yes" : "no"} · your margin policy:{" "}
-          {score.fairness.user_margin_policy}
+          {score.fairness.note
+            ? score.fairness.note
+            : `Algo minimum cash: ${usd(score.fairness.algo_min_cash ?? 0)} · leverage used: ${
+                score.fairness.algo_used_leverage ? "yes" : "no"
+              } · your margin policy: ${score.fairness.user_margin_policy ?? "—"}`}
         </div>
       </div>
 
       <div className="card">
-        <h3>Your trade log ({score.user.trades.length})</h3>
-        <TradeTable trades={score.user.trades} />
+        {isOptions ? (
+          <>
+            <h3>Your option trades ({score.user.option_trades?.length ?? 0})</h3>
+            <OptionTradeTable trades={score.user.option_trades ?? []} />
+          </>
+        ) : (
+          <>
+            <h3>Your trade log ({score.user.trades?.length ?? 0})</h3>
+            <TradeTable trades={score.user.trades ?? []} />
+          </>
+        )}
       </div>
 
       <div className="card">

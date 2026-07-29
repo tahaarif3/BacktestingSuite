@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { OrderSide, QtyMode, SignalEvent } from "../../types";
+import type { OrderSide, QtyMode, OptionStructureConfig, OptionStructureMeta, SignalEvent } from "../../types";
 import type { useReplaySession } from "../../hooks/useReplaySession";
 import { usePlayback } from "../../hooks/usePlayback";
+import { api } from "../../api";
 import CandleChart, { type CandleChartHandle, type CandleFill } from "../CandleChart";
 import ReplayHud from "./ReplayHud";
+import OptionsHud from "./OptionsHud";
 import PlaybackControls from "./PlaybackControls";
 import ReplayRail, { type SignalNow } from "./ReplayRail";
+import OptionsRail, { type OptionsTicketHandle } from "./OptionsRail";
+import { DEFAULT_OPTION_STRUCTURE } from "../options/OptionsConfig";
 import type { OrderTicketHandle } from "./OrderTicket";
 
 interface Props {
@@ -25,11 +29,23 @@ function fmtDate(d: number | string | undefined, intraday: boolean): string {
 }
 
 export default function ReplayRunner({ session, active }: Props) {
-  const { state, submitOrder, seek, finish, rewind, reset, undo } = session;
+  const { state, submitOrder, submitOptionOrder, previewOption, seek, finish, rewind, reset, undo } = session;
+  const isOptions = state.mode === "options";
   const bars = state.bars!;
   const chartRef = useRef<CandleChartHandle>(null);
   const ticketRef = useRef<OrderTicketHandle>(null);
+  const optTicketRef = useRef<OptionsTicketHandle>(null);
   const [side, setSide] = useState<OrderSide>("buy");
+  const [structureCfg, setStructureCfg] = useState<OptionStructureConfig>(
+    () => state.optionsAccount !== null || isOptions ? DEFAULT_OPTION_STRUCTURE : DEFAULT_OPTION_STRUCTURE
+  );
+  const [structures, setStructures] = useState<OptionStructureMeta[]>([]);
+
+  useEffect(() => {
+    if (isOptions && structures.length === 0) {
+      api.listOptionStructures().then(setStructures).catch(() => {});
+    }
+  }, [isOptions, structures.length]);
 
   const signalBars = useMemo(() => new Set(state.signalEvents.map((e) => e.index)), [state.signalEvents]);
   const eventByIndex = useMemo(() => {
@@ -38,17 +54,17 @@ export default function ReplayRunner({ session, active }: Props) {
     return m;
   }, [state.signalEvents]);
 
-  const fillMarkers: CandleFill[] = useMemo(
-    () =>
-      state.fills
-        .filter((f) => !f.no_op)
-        .map((f) => ({
-          index: f.fill_index,
-          side: f.trade_shares >= 0 ? "buy" : "sell",
-          price: f.exec_price,
-        })),
-    [state.fills]
-  );
+  const fillMarkers: CandleFill[] = useMemo(() => {
+    if (isOptions) {
+      return state.optionFills
+        .filter((f) => f.action !== "expiry")
+        .map((f) => ({ index: f.fill_index, side: f.action === "open" ? "buy" : "sell", price: f.spot }));
+    }
+    return state.fills
+      .filter((f) => !f.no_op)
+      .map((f) => ({ index: f.fill_index, side: f.trade_shares >= 0 ? "buy" : "sell", price: f.exec_price }));
+  }, [state.fills, state.optionFills, isOptions]);
+
   const signalMarkers = useMemo(
     () => state.signalEvents.map((e) => ({ index: e.index, to_signal: e.to_signal })),
     [state.signalEvents]
@@ -63,7 +79,6 @@ export default function ReplayRunner({ session, active }: Props) {
     enabled: active,
   });
 
-  // Sync the playback cursor to the (possibly resumed) session cursor once.
   const syncedRef = useRef<string | null>(null);
   useEffect(() => {
     if (state.sessionId && syncedRef.current !== state.sessionId) {
@@ -74,7 +89,6 @@ export default function ReplayRunner({ session, active }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.sessionId]);
 
-  // Redraw / resize when the panel becomes visible again.
   useEffect(() => {
     if (active) {
       chartRef.current?.resize();
@@ -88,10 +102,10 @@ export default function ReplayRunner({ session, active }: Props) {
   const reviewing = play.reviewing;
   const event = eventByIndex.get(cursor) ?? null;
 
-  // Preselect a side when the cursor lands on a signal bar.
+  // Preselect an equity side on a signal bar (equity mode only).
   useEffect(() => {
-    if (event) setSide(event.to_signal > 0 ? "buy" : event.to_signal < 0 ? "sell" : "close");
-  }, [event]);
+    if (!isOptions && event) setSide(event.to_signal > 0 ? "buy" : event.to_signal < 0 ? "sell" : "close");
+  }, [event, isOptions]);
 
   const signalNow: SignalNow | null = event
     ? {
@@ -103,8 +117,23 @@ export default function ReplayRunner({ session, active }: Props) {
     : null;
 
   const handleSubmit = async (o: { side: OrderSide; qty_mode: QtyMode; qty_value: number }) => {
-    const c = cursor;
-    const st = await submitOrder({ bar_index: c, side: o.side, qty_mode: o.qty_mode, qty_value: o.qty_value });
+    const st = await submitOrder({ bar_index: cursor, side: o.side, qty_mode: o.qty_mode, qty_value: o.qty_value });
+    if (st) {
+      controls.setMaxReached(st.cursor);
+      requestAnimationFrame(() => chartRef.current?.draw(st.cursor));
+    }
+  };
+
+  const handleOpenOption = async (cfg: OptionStructureConfig) => {
+    const st = await submitOptionOrder({ bar_index: cursor, action: "open", structure: cfg });
+    if (st) {
+      controls.setMaxReached(st.cursor);
+      requestAnimationFrame(() => chartRef.current?.draw(st.cursor));
+    }
+  };
+
+  const handleCloseOption = async (positionId: string) => {
+    const st = await submitOptionOrder({ bar_index: cursor, action: "close", target_structure_id: positionId });
     if (st) {
       controls.setMaxReached(st.cursor);
       requestAnimationFrame(() => chartRef.current?.draw(st.cursor));
@@ -136,64 +165,73 @@ export default function ReplayRunner({ session, active }: Props) {
           break;
         case "Enter":
           e.preventDefault();
-          ticketRef.current?.submit();
+          if (isOptions) optTicketRef.current?.submit();
+          else ticketRef.current?.submit();
           break;
         case "b":
         case "B":
-          setSide("buy");
+          if (!isOptions) setSide("buy");
           break;
         case "s":
         case "S":
-          setSide("sell");
+          if (!isOptions) setSide("sell");
           break;
         case "c":
         case "C":
-          setSide("close");
-          break;
-        case "k":
-        case "K":
-          controls.play();
+          if (!isOptions) setSide("close");
           break;
         case "r":
         case "R":
           controls.restart();
           break;
-        case "1":
-          controls.setSpeed(1000);
-          break;
-        case "2":
-          controls.setSpeed(500);
-          break;
-        case "3":
-          controls.setSpeed(200);
-          break;
-        case "4":
-          controls.setSpeed(100);
-          break;
-        case "5":
-          controls.setSpeed(50);
-          break;
+        case "1": controls.setSpeed(1000); break;
+        case "2": controls.setSpeed(500); break;
+        case "3": controls.setSpeed(200); break;
+        case "4": controls.setSpeed(100); break;
+        case "5": controls.setSpeed(50); break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [controls]);
+  }, [controls, isOptions]);
+
+  const disabled = reviewing || state.submitting || cursor >= state.totalBars - 1;
+  const disabledReason = reviewing
+    ? "Reviewing history — press End to return to live."
+    : cursor >= state.totalBars - 1
+      ? "End of data."
+      : undefined;
 
   return (
     <div className="replay">
       <div className="replay-main">
-        <ReplayHud
-          symbol={state.symbol}
-          interval={state.interval}
-          dateLabel={fmtDate(bars.dates[cursor], state.intraday)}
-          cursor={cursor}
-          startIndex={state.startIndex}
-          totalBars={state.totalBars}
-          account={state.account}
-          equityTail={state.equityTail}
-          capital={state.capital}
-          reviewing={reviewing}
-        />
+        {isOptions ? (
+          <OptionsHud
+            symbol={state.symbol}
+            interval={state.interval}
+            dateLabel={fmtDate(bars.dates[cursor], state.intraday)}
+            cursor={cursor}
+            startIndex={state.startIndex}
+            totalBars={state.totalBars}
+            account={state.optionsAccount}
+            equityTail={state.equityTail}
+            capital={state.capital}
+            reviewing={reviewing}
+          />
+        ) : (
+          <ReplayHud
+            symbol={state.symbol}
+            interval={state.interval}
+            dateLabel={fmtDate(bars.dates[cursor], state.intraday)}
+            cursor={cursor}
+            startIndex={state.startIndex}
+            totalBars={state.totalBars}
+            account={state.account}
+            equityTail={state.equityTail}
+            capital={state.capital}
+            reviewing={reviewing}
+          />
+        )}
 
         {state.causalityWarning && <div className="error">{state.causalityWarning}</div>}
 
@@ -218,7 +256,7 @@ export default function ReplayRunner({ session, active }: Props) {
           state={play}
           controls={controls}
           onFinish={() => finish(cursor)}
-          canUndo={state.orders.length > 0}
+          canUndo={isOptions ? state.optionOrders.length > 0 : state.orders.length > 0}
           onUndo={() => {
             void undo();
           }}
@@ -237,30 +275,42 @@ export default function ReplayRunner({ session, active }: Props) {
         />
       </div>
 
-      <ReplayRail
-        barIndex={cursor}
-        price={price}
-        account={state.account}
-        algoShares={event?.algo_target_shares ?? 0}
-        signalNow={signalNow}
-        intraday={state.intraday}
-        fills={state.fills}
-        disabled={reviewing || state.submitting || cursor >= state.totalBars - 1}
-        disabledReason={
-          reviewing
-            ? "Reviewing history — press End to return to live."
-            : cursor >= state.totalBars - 1
-              ? "End of data."
-              : undefined
-        }
-        submitting={state.submitting}
-        error={state.error}
-        side={side}
-        setSide={setSide}
-        onSubmit={handleSubmit}
-        onSkip={() => controls.play()}
-        ticketRef={ticketRef}
-      />
+      {isOptions ? (
+        <OptionsRail
+          ref={optTicketRef}
+          barIndex={cursor}
+          structures={structures}
+          account={state.optionsAccount}
+          structureCfg={structureCfg}
+          setStructureCfg={setStructureCfg}
+          disabled={disabled}
+          disabledReason={disabledReason}
+          submitting={state.submitting}
+          error={state.error}
+          previewOption={previewOption}
+          onOpen={handleOpenOption}
+          onClose={handleCloseOption}
+        />
+      ) : (
+        <ReplayRail
+          barIndex={cursor}
+          price={price}
+          account={state.account}
+          algoShares={event?.algo_target_shares ?? 0}
+          signalNow={signalNow}
+          intraday={state.intraday}
+          fills={state.fills}
+          disabled={disabled}
+          disabledReason={disabledReason}
+          submitting={state.submitting}
+          error={state.error}
+          side={side}
+          setSide={setSide}
+          onSubmit={handleSubmit}
+          onSkip={() => controls.play()}
+          ticketRef={ticketRef}
+        />
+      )}
     </div>
   );
 }

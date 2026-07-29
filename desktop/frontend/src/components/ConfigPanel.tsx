@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
-import type { BacktestConfig, DataFile, SizerSpec, StrategySpec } from "../types";
+import { useEffect, useMemo, useState } from "react";
+import type { BacktestConfig, DataFile, OptionStructureMeta, SizerSpec, StrategySpec, TradeMode } from "../types";
+import { api } from "../api";
 import TickerPicker, { type TickerSelection } from "./TickerPicker";
+import OptionsConfig, { DEFAULT_OPTION_STRUCTURE, DEFAULT_VOL } from "./options/OptionsConfig";
 
 interface Props {
   strategies: StrategySpec[];
@@ -24,11 +26,17 @@ export default function ConfigPanel(props: Props) {
     interval: "1d",
   });
 
+  const [structures, setStructures] = useState<OptionStructureMeta[]>([]);
+  useEffect(() => {
+    api.listOptionStructures().then(setStructures).catch(() => {});
+  }, []);
+
   const spec = useMemo(
     () => strategies.find((s) => s.id === config.strategy),
     [strategies, config.strategy]
   );
   const sizerSpec = sizers.find((s) => s.id === config.sizer);
+  const mode: TradeMode = config.mode ?? "equity";
 
   const update = (patch: Partial<BacktestConfig>) => setConfig({ ...config, ...patch });
   const updateData = (patch: Partial<BacktestConfig["data"]>) =>
@@ -126,6 +134,37 @@ export default function ConfigPanel(props: Props) {
             Allow shorting
           </label>
         </div>
+      )}
+
+      <div className="section-title">Trade mode</div>
+      <div className="seg">
+        <button
+          className={`seg-btn ${mode === "equity" ? "active" : ""}`}
+          onClick={() => update({ mode: "equity", options: null, vol: null })}
+        >
+          Equity
+        </button>
+        <button
+          className={`seg-btn ${mode === "options" ? "active" : ""}`}
+          onClick={() =>
+            update({
+              mode: "options",
+              options: config.options ?? DEFAULT_OPTION_STRUCTURE,
+              vol: config.vol ?? DEFAULT_VOL,
+            })
+          }
+        >
+          Options
+        </button>
+      </div>
+      {mode === "options" && (
+        <OptionsConfig
+          structures={structures}
+          value={config.options ?? DEFAULT_OPTION_STRUCTURE}
+          onChange={(v) => update({ options: v })}
+          vol={config.vol ?? DEFAULT_VOL}
+          onVolChange={(v) => update({ vol: v })}
+        />
       )}
 
       <div className="section-title">Sizing &amp; Costs</div>

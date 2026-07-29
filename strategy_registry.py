@@ -40,6 +40,7 @@ RSIMeanReversionStrategy = _try_import("strat.rsi_mean_reversion", "RSIMeanRever
 BollingerBandsStrategy = _try_import("strat.bollinger_bands", "BollingerBandsStrategy")
 MACDStrategy = _try_import("strat.macd", "MACDStrategy")
 GeneticProgrammingStrategy = _try_import("strat.genetic_programming", "GeneticProgrammingStrategy")
+RSBreakoutStrategy = _try_import("strat.rs_breakout", "RSBreakoutStrategy")
 
 DEFAULT_GP_JSON = "champion_gp.json"
 
@@ -194,6 +195,31 @@ _register(
         params=[],
         supports_short=False,
         requires_file=DEFAULT_GP_JSON,
+    )
+)
+_register(
+    StrategySpec(
+        id="rs_breakout",
+        name="Relative-Strength Breakout",
+        cls=RSBreakoutStrategy,
+        params=[
+            ParamSpec("trend_ma", "Trend MA (bars)", "int", 90, 20, 250, 1),
+            ParamSpec("slope_lookback", "MA Slope Lookback", "int", 10, 1, 60, 1),
+            ParamSpec("rs_lookback", "Rel-Strength Lookback", "int", 20, 2, 120, 1),
+            ParamSpec("rs_edge", "Rel-Strength Edge", "float", 0.0, 0.0, 0.1, 0.005),
+            ParamSpec("gap_edge", "Overnight-Gap Edge", "float", 0.0, 0.0, 0.05, 0.001),
+            ParamSpec("breakout_window", "Breakout Lookback", "int", 20, 3, 120, 1),
+            ParamSpec("range_mult", "Momentum Range x ATR", "float", 1.2, 0.5, 4.0, 0.1),
+            ParamSpec("atr_window", "ATR Window", "int", 14, 2, 60, 1),
+            ParamSpec("vol_mult", "Volume Spike x Avg", "float", 1.5, 1.0, 5.0, 0.1),
+            ParamSpec("vol_window", "Volume Avg Window", "int", 20, 2, 120, 1),
+            ParamSpec("entry_window_bars", "Entry Bars After Open", "int", 3, 1, 40, 1),
+            ParamSpec("stop_pct", "Stop %", "float", 0.02, 0.0, 0.2, 0.005),
+            ParamSpec("take_pct", "Take-Profit %", "float", 0.06, 0.0, 0.5, 0.01),
+            ParamSpec("max_hold_bars", "Max Hold (0=off)", "int", 0, 0, 500, 1),
+        ],
+        supports_short=False,
+        wfa_grid={"breakout_window": [10, 20, 40], "rs_lookback": [10, 20, 40]},
     )
 )
 

@@ -12,6 +12,33 @@ class DataConfig(BaseModel):
     interval: str = "1d"
 
 
+class OptionStructureConfig(BaseModel):
+    """Mirrors options.structures.StructureSpec — the template used to open a
+    structure (in a backtest or a replay session)."""
+
+    structure_type: str = "bear_call_spread"
+    selection: Literal["delta", "pct_otm", "absolute"] = "delta"
+    short_delta: float = 0.30
+    pct_otm: float = 0.05
+    width: float = 5.0
+    strikes: Optional[List[float]] = None
+    dte_bars: int = 30
+    contracts: int = 1
+    grid_spacing: float = 5.0
+
+
+class VolModelConfig(BaseModel):
+    """Black-Scholes synthetic-pricing knobs (see options.volatility)."""
+
+    risk_free_rate: float = 0.04
+    iv_window: int = 20
+    iv_multiplier: float = 1.0
+    iv_override: Optional[float] = None
+    iv_floor: float = 0.05
+    iv_cap: float = 3.0
+    margin_policy: Literal["defined_risk", "reg_t"] = "defined_risk"
+
+
 class BacktestConfig(BaseModel):
     strategy: str = "sma"
     params: Dict[str, Any] = Field(default_factory=dict)
@@ -26,6 +53,11 @@ class BacktestConfig(BaseModel):
     commission_per_share: float = 0.0
     min_trade_shares: float = 1e-8
     timing: str = "next_open"            # "next_open" | "next_close"
+
+    # Trade mode: "equity" (shares, default) or "options" (Black-Scholes synthetic).
+    mode: Literal["equity", "options"] = "equity"
+    options: Optional[OptionStructureConfig] = None
+    vol: Optional[VolModelConfig] = None
 
     data: DataConfig = Field(default_factory=DataConfig)
 
@@ -87,6 +119,11 @@ class ReplaySessionConfig(BaseModel):
     whole_shares: bool = False
     label: Optional[str] = None
 
+    # Trade mode (see BacktestConfig).
+    mode: Literal["equity", "options"] = "equity"
+    options: Optional[OptionStructureConfig] = None
+    vol: Optional[VolModelConfig] = None
+
     def to_backtest_config(self) -> "BacktestConfig":
         return BacktestConfig(
             strategy=self.strategy,
@@ -100,6 +137,9 @@ class ReplaySessionConfig(BaseModel):
             commission_per_share=self.commission_per_share,
             min_trade_shares=self.min_trade_shares,
             timing=self.timing,
+            mode=self.mode,
+            options=self.options,
+            vol=self.vol,
             data=self.data,
         )
 
@@ -114,6 +154,23 @@ class ReplayOrderRequest(BaseModel):
     qty_mode: Literal["shares", "fraction", "algo", "algo_scaled"] = "shares"
     qty_value: float = 0.0
     note: str = ""
+
+
+class ReplayOptionOrderRequest(BaseModel):
+    """Open a structure (carrying its template) or close an existing one."""
+
+    bar_index: int
+    action: Literal["open", "close"] = "open"
+    structure: Optional[OptionStructureConfig] = None   # required for "open"
+    target_structure_id: Optional[str] = None           # required for "close"
+    note: str = ""
+
+
+class OptionPreviewRequest(BaseModel):
+    """Dry-run: price a structure template against a session bar (no order placed)."""
+
+    bar_index: int
+    structure: OptionStructureConfig = Field(default_factory=OptionStructureConfig)
 
 
 class SeekRequest(BaseModel):
