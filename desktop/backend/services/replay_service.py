@@ -758,6 +758,36 @@ def get_state(sid: str) -> Dict[str, Any]:
         return _state_payload(_require(sid))
 
 
+def reference_series(sid: str, symbol: str = "SPY") -> Dict[str, Any]:
+    """The reference index (SPY) close aligned to this session's bars, for the
+    relative-strength overlay. Aligns by calendar date (SPY here is daily) and
+    forward/back-fills so every session bar has a value. Returns an empty list if
+    the reference dataset isn't available."""
+    with _LOCK:
+        s = _require(sid)
+        path = data_service.resolve_data_path("spy_daily_yfinance.parquet")
+        if not os.path.exists(path):
+            return {"symbol": symbol, "close": []}
+        try:
+            ref_bars = DataLoader().get_bars(path)
+        except Exception:
+            return {"symbol": symbol, "close": []}
+        by_date = {b.timestamp.date(): b.close for b in ref_bars}
+        out: List[Optional[float]] = []
+        last: Optional[float] = None
+        for b in s.bars:
+            v = by_date.get(b.timestamp.date())
+            if v is None:
+                v = last
+            else:
+                last = v
+            out.append(v)
+        first = next((x for x in out if x is not None), None)
+        cn = backtest_service._clean_num
+        close = [cn(x if x is not None else (first if first is not None else 0.0)) for x in out]
+        return {"symbol": symbol, "close": close}
+
+
 def get_bars(sid: str, start: int = 0, count: int = DEFAULT_BAR_CHUNK) -> Dict[str, Any]:
     if count > MAX_BAR_CHUNK:
         raise ValueError(f"count must be <= {MAX_BAR_CHUNK}.")

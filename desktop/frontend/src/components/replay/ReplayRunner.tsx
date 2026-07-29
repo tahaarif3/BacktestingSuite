@@ -3,14 +3,18 @@ import type { OrderSide, QtyMode, OptionStructureConfig, OptionStructureMeta, Si
 import type { useReplaySession } from "../../hooks/useReplaySession";
 import { usePlayback } from "../../hooks/usePlayback";
 import { api } from "../../api";
-import CandleChart, { type CandleChartHandle, type CandleFill } from "../CandleChart";
+import CandleChart, { type CandleChartHandle, type CandleFill, type PriceOverlay, type SubPanel } from "../CandleChart";
 import ReplayHud from "./ReplayHud";
 import OptionsHud from "./OptionsHud";
 import PlaybackControls from "./PlaybackControls";
 import ReplayRail, { type SignalNow } from "./ReplayRail";
 import OptionsRail, { type OptionsTicketHandle } from "./OptionsRail";
+import IndicatorControls from "./IndicatorControls";
 import { DEFAULT_OPTION_STRUCTURE } from "../options/OptionsConfig";
 import type { OrderTicketHandle } from "./OrderTicket";
+import type { Indicator } from "../../indicators";
+import { sma, ema, rsi, relativeStrength, regimeAt } from "../../indicators";
+import { PALETTE } from "../Plot";
 
 interface Props {
   session: ReturnType<typeof useReplaySession>;
@@ -40,12 +44,72 @@ export default function ReplayRunner({ session, active }: Props) {
     () => state.optionsAccount !== null || isOptions ? DEFAULT_OPTION_STRUCTURE : DEFAULT_OPTION_STRUCTURE
   );
   const [structures, setStructures] = useState<OptionStructureMeta[]>([]);
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
+  const [reference, setReference] = useState<number[] | null>(null);
+  const [showRS, setShowRS] = useState(false);
 
   useEffect(() => {
     if (isOptions && structures.length === 0) {
       api.listOptionStructures().then(setStructures).catch(() => {});
     }
   }, [isOptions, structures.length]);
+
+  // Fetch the SPY reference series once per session (for relative strength + regime).
+  useEffect(() => {
+    if (!state.sessionId) return;
+    let cancelled = false;
+    api.getReplayReference(state.sessionId)
+      .then((r) => {
+        if (!cancelled) setReference(r.close && r.close.length ? r.close : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [state.sessionId]);
+
+  const hasReference = !!reference && reference.length === (bars?.close.length ?? -1);
+
+  // Price-panel overlays (SMA/EMA) computed from the full close series.
+  const overlays: PriceOverlay[] = useMemo(() => {
+    const close = bars?.close ?? [];
+    return indicators
+      .filter((i) => i.type === "sma" || i.type === "ema")
+      .map((i) => ({
+        id: i.id,
+        label: `${i.type.toUpperCase()} ${i.period}`,
+        color: i.color,
+        values: i.type === "sma" ? sma(close, i.period) : ema(close, i.period),
+      }));
+  }, [indicators, bars]);
+
+  // Lower sub-panels: one per RSI indicator, plus relative strength when enabled.
+  const panels: SubPanel[] = useMemo(() => {
+    const close = bars?.close ?? [];
+    const out: SubPanel[] = [];
+    if (hasReference && showRS && reference) {
+      out.push({
+        id: "rs",
+        label: "Rel-Strength vs SPY",
+        color: PALETTE.accent,
+        values: relativeStrength(close, reference),
+        guides: [100],
+      });
+    }
+    indicators
+      .filter((i) => i.type === "rsi")
+      .forEach((i) =>
+        out.push({
+          id: i.id,
+          label: `RSI ${i.period}`,
+          color: i.color,
+          values: rsi(close, i.period),
+          fixedRange: [0, 100],
+          guides: [30, 70],
+        })
+      );
+    return out;
+  }, [indicators, bars, hasReference, showRS, reference]);
 
   const signalBars = useMemo(() => new Set(state.signalEvents.map((e) => e.index)), [state.signalEvents]);
   const eventByIndex = useMemo(() => {
@@ -101,6 +165,11 @@ export default function ReplayRunner({ session, active }: Props) {
   const price = bars.close[cursor] ?? 0;
   const reviewing = play.reviewing;
   const event = eventByIndex.get(cursor) ?? null;
+
+  const regime = useMemo(
+    () => (hasReference && reference ? regimeAt(bars.close, reference, cursor) : null),
+    [hasReference, reference, bars, cursor]
+  );
 
   // Preselect an equity side on a signal bar (equity mode only).
   useEffect(() => {
@@ -235,6 +304,32 @@ export default function ReplayRunner({ session, active }: Props) {
 
         {state.causalityWarning && <div className="error">{state.causalityWarning}</div>}
 
+        <div className="chart-toolbar">
+          <IndicatorControls
+            indicators={indicators}
+            onChange={setIndicators}
+            hasReference={hasReference}
+            showRelStrength={showRS}
+            onToggleRelStrength={setShowRS}
+          />
+          {regime && (
+            <div className="regime-strip">
+              <span className={`regime-tag ${regime.spyWeak ? "on" : ""}`}>
+                SPY {regime.spyWeak ? "weak ✓" : "not weak"}
+              </span>
+              <span className={`regime-tag ${regime.stockStrong ? "on" : ""}`}>
+                Stock {regime.stockStrong ? "strong ✓" : "not strong"}
+              </span>
+              <span className={`regime-tag ${regime.rsPct > 0 ? "on" : ""}`}>
+                RS(20) {(regime.rsPct * 100).toFixed(1)}%
+              </span>
+              <span className={`regime-tag ${regime.armed ? "armed" : ""}`}>
+                {regime.armed ? "setup armed" : "waiting"}
+              </span>
+            </div>
+          )}
+        </div>
+
         <div className="replay-chart">
           <CandleChart
             ref={chartRef}
@@ -246,9 +341,11 @@ export default function ReplayRunner({ session, active }: Props) {
             volume={bars.volume}
             signals={signalMarkers}
             fills={fillMarkers}
+            overlays={overlays}
+            panels={panels}
             intraday={state.intraday}
             sessionKey={state.sessionId ?? "none"}
-            height={440}
+            height={panels.length > 0 ? 520 : 440}
           />
         </div>
 

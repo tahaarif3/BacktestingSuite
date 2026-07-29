@@ -490,3 +490,21 @@ tr:hover td { background: var(--bg-elev); }
 .opt-position { padding: 8px 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); }
 .opt-position-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; text-transform: capitalize; }
 .opt-position .btn-inline { margin-top: 6px; }
+
+/* --- Chart indicators + regime strip --- */
+.chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 6px; }
+.indicator-controls { display: flex; flex-direction: column; gap: 6px; }
+.indicator-add { display: flex; align-items: center; gap: 6px; }
+.indicator-add select, .indicator-add input { padding: 3px 6px; font-size: 12px; }
+.indicator-add input[type="number"] { width: 60px; }
+.indicator-rs { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); margin-left: 6px; }
+.indicator-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.indicator-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); }
+.indicator-swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.indicator-chip-x { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+.indicator-chip-x:hover { color: var(--danger); }
+
+.regime-strip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.regime-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.regime-tag.on { color: var(--success); border-color: var(--success); }
+.regime-tag.armed { color: #04121f; background: var(--success); font-weight: 600; border-color: var(--success); }

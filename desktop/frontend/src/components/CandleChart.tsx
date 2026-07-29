@@ -13,6 +13,22 @@ export interface CandleFill {
   price: number;
 }
 
+export interface PriceOverlay {
+  id: string;
+  label: string;
+  color: string;
+  values: (number | null)[]; // full-length, sliced to the window internally
+}
+
+export interface SubPanel {
+  id: string;
+  label: string;
+  color: string;
+  values: (number | null)[]; // full-length
+  fixedRange?: [number, number]; // e.g. RSI [0,100]
+  guides?: number[]; // horizontal guide lines (e.g. 30/70, or 100 baseline)
+}
+
 export interface CandleChartProps {
   dates: (number | string)[]; // full-length, for tick labels + hover
   open: number[];
@@ -22,6 +38,8 @@ export interface CandleChartProps {
   volume: number[];
   signals: CandleMarker[];
   fills: CandleFill[];
+  overlays?: PriceOverlay[];
+  panels?: SubPanel[];
   windowSize?: number;
   height?: number;
   sessionKey: string; // bump to force a full re-init
@@ -161,6 +179,47 @@ const CandleChart = forwardRef<CandleChartHandle, CandleChartProps>(function Can
       hoverinfo: "skip",
     };
 
+    // Price-panel overlay lines (SMA / EMA), sliced to the window.
+    const overlays = p.overlays ?? [];
+    const overlayTraces = overlays.map((ov) => ({
+      type: "scatter",
+      mode: "lines",
+      x: xs,
+      y: ov.values.slice(lo, hi),
+      line: { color: ov.color, width: 1.4 },
+      xaxis: "x",
+      yaxis: "y",
+      name: ov.label,
+      hoverinfo: "skip",
+      connectgaps: false,
+    }));
+
+    // Stacked lower sub-panels (RSI, relative-strength) above the volume strip.
+    const panels = p.panels ?? [];
+    const volTop = 0.12;
+    const gap = 0.03;
+    const panelH = 0.16;
+    let yStart = volTop + gap;
+    const panelDomains: [number, number][] = [];
+    for (let k = 0; k < panels.length; k++) {
+      panelDomains.push([yStart, yStart + panelH]);
+      yStart += panelH + gap;
+    }
+    const priceBottom = panels.length > 0 ? yStart : volTop + gap;
+
+    const panelTraces = panels.map((pan, k) => ({
+      type: "scatter",
+      mode: "lines",
+      x: xs,
+      y: pan.values.slice(lo, hi),
+      line: { color: pan.color, width: 1.4 },
+      xaxis: "x",
+      yaxis: `y${k + 3}`,
+      name: pan.label,
+      hoverinfo: "skip",
+      connectgaps: false,
+    }));
+
     // ~6 tick labels across the window.
     const nTicks = 6;
     const tickvals: number[] = [];
@@ -171,7 +230,24 @@ const CandleChart = forwardRef<CandleChartHandle, CandleChartProps>(function Can
       ticktext.push(fmtDate(p.dates[xs[i]], !!p.intraday));
     }
 
-    const layout = {
+    const shapes: Record<string, unknown>[] = [];
+    const annotations: Record<string, unknown>[] = [];
+    panels.forEach((pan, k) => {
+      (pan.guides ?? []).forEach((g) => {
+        shapes.push({
+          type: "line", xref: "x domain", x0: 0, x1: 1,
+          yref: `y${k + 3}`, y0: g, y1: g,
+          line: { color: "#334155", width: 1, dash: "dot" },
+        });
+      });
+      annotations.push({
+        xref: "paper", yref: `y${k + 3} domain`, x: 0.004, y: 1,
+        xanchor: "left", yanchor: "top", text: pan.label, showarrow: false,
+        font: { size: 10, color: pan.color },
+      });
+    });
+
+    const layout: Record<string, unknown> = {
       ...LAYOUT_BASE,
       xaxis: {
         type: "linear",
@@ -182,11 +258,26 @@ const CandleChart = forwardRef<CandleChartHandle, CandleChartProps>(function Can
         ticktext,
         rangeslider: { visible: false },
       },
-      yaxis: { domain: [0.24, 1], range: yr, gridcolor: GRID, zerolinecolor: GRID, side: "right" },
-      yaxis2: { domain: [0, 0.18], gridcolor: "rgba(0,0,0,0)", showticklabels: false },
+      yaxis: { domain: [priceBottom, 1], range: yr, gridcolor: GRID, zerolinecolor: GRID, side: "right" },
+      yaxis2: { domain: [0, volTop], gridcolor: "rgba(0,0,0,0)", showticklabels: false },
+      shapes,
+      annotations,
       uirevision: p.sessionKey,
     };
-    return { traces: [candle, volume, signalTrace, fillTrace], layout };
+    panels.forEach((pan, k) => {
+      layout[`yaxis${k + 3}`] = {
+        domain: panelDomains[k],
+        gridcolor: GRID,
+        zerolinecolor: GRID,
+        side: "right",
+        range: pan.fixedRange,
+        fixedrange: !!pan.fixedRange,
+      };
+    });
+    return {
+      traces: [candle, volume, ...overlayTraces, signalTrace, fillTrace, ...panelTraces],
+      layout,
+    };
   }
 
   function draw(cursor: number) {
@@ -246,7 +337,7 @@ const CandleChart = forwardRef<CandleChartHandle, CandleChartProps>(function Can
   useEffect(() => {
     if (initedRef.current) draw(lastCursorRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.fills, props.signals]);
+  }, [props.fills, props.signals, props.overlays, props.panels]);
 
   return <div ref={divRef} style={{ width: "100%", height: props.height ?? 420 }} />;
 });
