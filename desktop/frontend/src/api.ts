@@ -152,6 +152,9 @@ export const api = {
   getReplayBars: (id: string, start: number, count: number) =>
     get<ReplayBars>(`/api/replay/sessions/${id}/bars?start=${start}&count=${count}`),
 
+  getReplayReference: (id: string) =>
+    get<{ symbol: string; close: number[] }>(`/api/replay/sessions/${id}/reference`),
+
   submitReplayOrder: (id: string, order: ReplayOrderRequest) =>
     post<ReplayOrderResponse>(`/api/replay/sessions/${id}/orders`, order),
 

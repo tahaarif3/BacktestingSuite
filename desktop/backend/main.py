@@ -222,6 +222,16 @@ def get_replay_session(sid: str):
         raise HTTPException(status_code=410, detail=str(e))
 
 
+@app.get("/api/replay/sessions/{sid}/reference")
+def get_replay_reference(sid: str):
+    try:
+        return replay_service.reference_series(sid)
+    except replay_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except replay_service.SessionStale as e:
+        raise HTTPException(status_code=410, detail=str(e))
+
+
 @app.get("/api/replay/sessions/{sid}/bars")
 def get_replay_bars(sid: str, start: int = 0, count: int = replay_service.DEFAULT_BAR_CHUNK):
     try:
