@@ -19,6 +19,7 @@ import ReplayPanel from "./components/replay/ReplayPanel";
 import PortfolioPanel from "./components/portfolio/PortfolioPanel";
 import ScannerPanel from "./components/ScannerPanel";
 import PortfolioBacktestPanel from "./components/PortfolioBacktestPanel";
+import SpyDcaPanel from "./components/SpyDcaPanel";
 import UpdateBanner from "./components/UpdateBanner";
 
 const DEFAULT_CONFIG: BacktestConfig = {
@@ -38,7 +39,17 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
-type Tab = "results" | "robustness" | "compare" | "scanner" | "pbacktest" | "replay" | "portfolio" | "editor";
+type Tab = "results" | "robustness" | "compare" | "scanner" | "pbacktest" | "replay" | "portfolio" | "dca" | "editor";
+type Group = "rsbreakout" | "dca" | "misc";
+const RS_VIEWS: { id: Tab; label: string }[] = [
+  { id: "results", label: "Backtest" },
+  { id: "scanner", label: "Scanner" },
+  { id: "pbacktest", label: "Portfolio Backtest" },
+  { id: "replay", label: "Replay" },
+  { id: "portfolio", label: "Portfolio" },
+  { id: "robustness", label: "Robustness" },
+  { id: "compare", label: "Compare" },
+];
 
 export default function App() {
   const [strategies, setStrategies] = useState<StrategySpec[]>([]);
@@ -58,13 +69,24 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState({ run: false, robustness: false, fetch: false });
 
+  const [group, setGroup] = useState<Group>("rsbreakout");
+
   const goTab = (t: Tab) => {
     if (t === "replay") setReplayVisited(true);
     if (t === "portfolio") setPortfolioVisited(true);
     setTab(t);
   };
 
-  const fullTab = tab === "replay" || tab === "portfolio";
+  const goGroup = (g: Group) => {
+    setGroup(g);
+    if (g === "dca") goTab("dca");
+    else if (g === "misc") goTab("editor");
+    else if (!RS_VIEWS.some((v) => v.id === tab)) goTab("results");
+  };
+
+  // Only the single-instrument backtest views use the ConfigPanel sidebar.
+  const showSidebar = group === "rsbreakout" && (tab === "results" || tab === "robustness" || tab === "compare");
+  const fullTab = !showSidebar;
 
   const rsBreakoutParams = (): Record<string, number> => {
     const spec = strategies.find((s) => s.id === "rs_breakout");
@@ -209,50 +231,37 @@ export default function App() {
 
       <div className="main">
         <div className="tabs">
-          <div className={`tab ${tab === "results" ? "active" : ""}`} onClick={() => goTab("results")}>
-            Results
+          <div className={`tab ${group === "rsbreakout" ? "active" : ""}`} onClick={() => goGroup("rsbreakout")}>
+            RS-Breakout
           </div>
-          <div className={`tab ${tab === "robustness" ? "active" : ""}`} onClick={() => goTab("robustness")}>
-            Robustness
+          <div className={`tab ${group === "dca" ? "active" : ""}`} onClick={() => goGroup("dca")}>
+            SPY DCA
           </div>
-          <div className={`tab ${tab === "compare" ? "active" : ""}`} onClick={() => goTab("compare")}>
-            Compare
-            {compareRuns.length > 0 && <span className="badge">{compareRuns.length}</span>}
-          </div>
-          <div className={`tab ${tab === "scanner" ? "active" : ""}`} onClick={() => goTab("scanner")}>
-            Scanner
-          </div>
-          <div className={`tab ${tab === "pbacktest" ? "active" : ""}`} onClick={() => goTab("pbacktest")}>
-            Portfolio Backtest
-          </div>
-          <div className={`tab ${tab === "replay" ? "active" : ""}`} onClick={() => goTab("replay")}>
-            Replay
-          </div>
-          <div className={`tab ${tab === "portfolio" ? "active" : ""}`} onClick={() => goTab("portfolio")}>
-            Portfolio
-          </div>
-          <div className={`tab ${tab === "editor" ? "active" : ""}`} onClick={() => goTab("editor")}>
-            Editor
+          <div className={`tab ${group === "misc" ? "active" : ""}`} onClick={() => goGroup("misc")}>
+            Misc Tools
           </div>
 
           <div className="tabs-right">
-            <button
-              className="tabs-link"
-              onClick={() => window.backtest?.checkForUpdates?.()}
-              title="Check GitHub for a newer version"
-            >
+            <button className="tabs-link" onClick={() => window.backtest?.checkForUpdates?.()} title="Check GitHub for a newer version">
               Check for updates
             </button>
-            <button
-              className="tabs-link"
-              onClick={() => window.backtest?.reportBug?.()}
-              title="Open a prefilled GitHub issue"
-            >
+            <button className="tabs-link" onClick={() => window.backtest?.reportBug?.()} title="Open a prefilled GitHub issue">
               Report a bug
             </button>
             <span className="app-version">v{window.backtest?.appVersion ?? "dev"}</span>
           </div>
         </div>
+
+        {group === "rsbreakout" && (
+          <div className="tabs subtabs">
+            {RS_VIEWS.map((v) => (
+              <div key={v.id} className={`tab ${tab === v.id ? "active" : ""}`} onClick={() => goTab(v.id)}>
+                {v.label}
+                {v.id === "compare" && compareRuns.length > 0 && <span className="badge">{compareRuns.length}</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className={`content ${fullTab ? "content--flush" : ""}`}>
           <UpdateBanner />
@@ -265,6 +274,7 @@ export default function App() {
           {tab === "editor" && <EditorPanel onStrategiesChanged={onStrategiesChanged} />}
           {tab === "scanner" && <ScannerPanel onBacktest={onScanBacktest} onReplay={onScanReplay} />}
           {tab === "pbacktest" && <PortfolioBacktestPanel />}
+          {tab === "dca" && <SpyDcaPanel />}
           {replayVisited && (
             <div style={{ display: tab === "replay" ? "block" : "none", height: "100%" }}>
               <ReplayPanel

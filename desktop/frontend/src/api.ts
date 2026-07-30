@@ -7,6 +7,8 @@ import type {
   JournalEntry,
   OptionOrderRequest,
   OptionPreview,
+  DcaResponse,
+  DcaScheme,
   OptionsBacktestResult,
   OptionStructureMeta,
   PortfolioBacktestResult,
@@ -205,6 +207,10 @@ export const api = {
     window?: number;
     refresh?: boolean;
   }) => post<ScreenResponse>("/api/screener/scan", body),
+
+  // --- SPY DCA / bankroll ---
+  runDca: (body: { symbol: string; start: string; end: string; refresh: boolean; schemes: DcaScheme[] }) =>
+    post<DcaResponse>("/api/dca/run", body),
 
   // --- Automated portfolio backtest ---
   runPortfolioBacktest: (body: {

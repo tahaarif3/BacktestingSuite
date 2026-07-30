@@ -26,6 +26,7 @@ from desktop.backend.schemas import (
     ReplayOrderRequest,
     RewindRequest,
     CreatePortfolioRequest,
+    DcaRequest,
     PortfolioBacktestRequest,
     PortfolioOrderRequest,
     RobustnessRequest,
@@ -37,6 +38,7 @@ from desktop.backend.schemas import (
 from desktop.backend.services import (
     backtest_service,
     data_service,
+    dca_service,
     market_meta,
     portfolio_backtest_service,
     portfolio_service,
@@ -186,6 +188,17 @@ def get_data_search(q: str, limit: int = 10):
         return {"results": market_meta.search_tickers(q, limit)}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# --- SPY DCA / bankroll backtest --------------------------------------------
+
+
+@app.post("/api/dca/run")
+def post_dca_run(req: DcaRequest):
+    try:
+        return dca_service.run(req.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # --- Automated portfolio backtest -------------------------------------------

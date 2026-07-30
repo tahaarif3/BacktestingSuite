@@ -194,6 +194,27 @@ class TickerValidateRequest(BaseModel):
     end: Optional[str] = None
 
 
+class DcaScheme(BaseModel):
+    label: str = "Scheme"
+    amount: float = 100.0
+    cadence: str = "monthly"              # weekly|biweekly|semimonthly|monthly|quarterly
+    buy_rule: str = "always"             # always|above_ma|below_ma
+    ma_type: str = "sma"                 # sma|ema
+    ma_period: int = 200
+    unused_cash: str = "accumulate"      # accumulate|skip
+    cash_yield_annual: float = 0.0
+    sell_rule: str = "none"              # none|above_ma|below_ma
+    sell_fraction: float = 1.0
+
+
+class DcaRequest(BaseModel):
+    symbol: str = "SPY"
+    start: str = "2010-01-01"
+    end: str = "2025-12-31"
+    refresh: bool = False
+    schemes: List[DcaScheme] = Field(default_factory=list)
+
+
 class PortfolioBacktestRequest(BaseModel):
     """Automated multi-position portfolio backtest. Any field of
     portfolio_backtest.PortfolioBacktestConfig may be supplied; omitted fields
