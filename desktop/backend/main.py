@@ -27,6 +27,7 @@ from desktop.backend.schemas import (
     RewindRequest,
     RobustnessRequest,
     SaveStrategyRequest,
+    ScreenRequest,
     SeekRequest,
     TickerValidateRequest,
 )
@@ -36,6 +37,7 @@ from desktop.backend.services import (
     market_meta,
     replay_service,
     robustness_service,
+    screener_service,
     strategy_editor_service,
 )
 
@@ -179,6 +181,24 @@ def get_data_search(q: str, limit: int = 10):
         return {"results": market_meta.search_tickers(q, limit)}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# --- Screener ---------------------------------------------------------------
+
+
+@app.post("/api/screener/scan")
+def post_screener_scan(req: ScreenRequest):
+    try:
+        return screener_service.scan(
+            req.tickers, req.start, req.end, req.interval, req.params, req.window, req.refresh
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/screener/watchlist")
+def get_screener_watchlist():
+    return {"tickers": screener_service.DEFAULT_WATCHLIST}
 
 
 # --- Options metadata -------------------------------------------------------
