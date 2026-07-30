@@ -211,8 +211,9 @@ export const api = {
     tickers: string[] | null;
     start: string;
     end: string;
+    interval: string;
     sensitivity: boolean;
-    config: Record<string, number | boolean>;
+    config: Record<string, number | boolean | string>;
   }) => post<PortfolioBacktestResult>("/api/portfolio-backtest/run", body),
 
   // --- Portfolio options replay ---

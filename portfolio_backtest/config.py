@@ -12,6 +12,7 @@ class PortfolioBacktestConfig:
     tickers: List[str] = field(default_factory=list)   # empty -> default watchlist
     start: str = "2016-01-01"
     end: str = "2025-12-31"
+    interval: str = "1d"                # "1d" | "1h" | "15m" | "5m" | ...
     benchmark: str = "SPY"
 
     # --- market filter (regime gate on the benchmark) ---

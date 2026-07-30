@@ -126,9 +126,10 @@ def build_iv_series(
     iv_override: Optional[float] = None,
     iv_floor: float = 0.05,
     iv_cap: float = 3.0,
+    annualization: float = 252.0,
 ) -> List[float]:
     closes = [b.close for b in bars]
-    rv = realized_vol_series(closes, window=iv_window)
+    rv = realized_vol_series(closes, window=iv_window, annualization=annualization)
     return [
         iv_for_bar(v, iv_multiplier=iv_multiplier, iv_override=iv_override,
                    iv_floor=iv_floor, iv_cap=iv_cap)

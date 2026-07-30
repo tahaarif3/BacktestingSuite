@@ -652,6 +652,7 @@ export interface PortfolioSessionConfig {
   tickers: string[] | null;
   start: string;
   end: string;
+  interval: string;
   capital: number;
   timing: string;
   warmup_bars: number;

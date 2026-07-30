@@ -11,9 +11,24 @@ interface Props {
 
 export default function PortfolioSetup({ onStart, loading, error }: Props) {
   const [tickersText, setTickersText] = useState("");
+  const [interval, setIntervalValue] = useState("1d");
   const [start, setStart] = useState("2019-01-01");
   const [end, setEnd] = useState("2024-12-31");
   const [capital, setCapital] = useState(100000);
+
+  // Intraday history is capped by the data provider — snap the range short.
+  const onIntervalChange = (iv: string) => {
+    setIntervalValue(iv);
+    const today = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    if (iv === "5m" || iv === "15m") {
+      const s = new Date(today); s.setDate(s.getDate() - 45);
+      setStart(iso(s)); setEnd(iso(today));
+    } else if (iv === "1h") {
+      const s = new Date(today); s.setDate(s.getDate() - 540);
+      setStart(iso(s)); setEnd(iso(today));
+    }
+  };
   const [timing, setTiming] = useState("next_close");
   const [warmup, setWarmup] = useState(150);
   const [refresh, setRefresh] = useState(true);
@@ -32,6 +47,7 @@ export default function PortfolioSetup({ onStart, loading, error }: Props) {
       tickers: tickers.length ? tickers : null,
       start,
       end,
+      interval,
       capital,
       timing,
       warmup_bars: warmup,
@@ -57,6 +73,15 @@ export default function PortfolioSetup({ onStart, loading, error }: Props) {
         </div>
         <div className="row">
           <div className="field">
+            <label>Timeframe</label>
+            <select value={interval} onChange={(e) => onIntervalChange(e.target.value)}>
+              <option value="1d">Daily</option>
+              <option value="1h">Hourly</option>
+              <option value="15m">15-minute</option>
+              <option value="5m">5-minute</option>
+            </select>
+          </div>
+          <div className="field">
             <label>Start</label>
             <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
           </div>
@@ -65,6 +90,13 @@ export default function PortfolioSetup({ onStart, loading, error }: Props) {
             <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </div>
         </div>
+        {interval !== "1d" && (
+          <p className="hint">
+            Intraday history is limited (~60 days for 5m/15m, ~2 years for 1h) and the strategy's
+            bar-length windows (90-bar MA, 20-bar breakout, DTE) now mean {interval} bars, not days —
+            shrink them in the strategy defaults or expect different behaviour.
+          </p>
+        )}
         <div className="row">
           <div className="field">
             <label>Capital ($)</label>

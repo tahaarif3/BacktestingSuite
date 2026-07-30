@@ -24,9 +24,9 @@ from options.instruments import OptionStructure
 from options.pricing import CONTRACT_MULTIPLIER, TRADING_DAYS, bs_greeks, bs_price
 
 
-def leg_time_to_expiry(expiry_index: int, bar_index: int) -> float:
-    """Trading-day years remaining for a leg at ``bar_index`` (>=0)."""
-    return max(expiry_index - bar_index, 0) / TRADING_DAYS
+def leg_time_to_expiry(expiry_index: int, bar_index: int, annualization: float = TRADING_DAYS) -> float:
+    """Years remaining for a leg at ``bar_index`` (>=0), in the bar timeframe."""
+    return max(expiry_index - bar_index, 0) / annualization
 
 
 def mark_structure(
@@ -35,20 +35,21 @@ def mark_structure(
     bar_index: int,
     r: float,
     sigma: float,
+    annualization: float = TRADING_DAYS,
 ) -> Dict[str, Any]:
     """Mark a whole structure at ``bar_index``.
 
     Returns per-structure dollar ``value`` (signed mark-to-market of holdings),
     aggregate position ``greeks`` (already ×multiplier×contracts), and per-leg
-    marks for the UI.
+    marks for the UI. ``annualization`` is bars-per-year (252 for daily).
     """
     value = 0.0
     net = {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0, "rho": 0.0}
     leg_marks: List[Dict[str, Any]] = []
     for leg in structure.legs:
-        T = leg_time_to_expiry(leg.expiry_index, bar_index)
+        T = leg_time_to_expiry(leg.expiry_index, bar_index, annualization)
         price = bs_price(spot, leg.strike, T, r, sigma, leg.kind)
-        g = bs_greeks(spot, leg.strike, T, r, sigma, leg.kind)
+        g = bs_greeks(spot, leg.strike, T, r, sigma, leg.kind, annualization=annualization)
         contrib = leg.quantity * price * CONTRACT_MULTIPLIER
         value += contrib
         for k in net:

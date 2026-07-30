@@ -197,6 +197,7 @@ def post_portfolio_backtest(req: PortfolioBacktestRequest):
         cfg = dict(req.config)
         cfg.setdefault("start", req.start)
         cfg.setdefault("end", req.end)
+        cfg.setdefault("interval", req.interval)
         if req.tickers is not None:
             cfg["tickers"] = req.tickers
         cfg["sensitivity"] = req.sensitivity
