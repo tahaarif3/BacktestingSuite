@@ -18,7 +18,7 @@ from desktop.backend.services import replay_service as R
 
 def _cfg(**over):
     base = dict(
-        strategy="sma", params={"fast_window": 10, "slow_window": 50},
+        strategy="rs_breakout", params={},
         capital=100000, timing="next_close", warmup_bars=60, mode="options",
         options=OptionStructureConfig(structure_type="bear_call_spread", selection="delta",
                                       short_delta=0.30, width=5, dte_bars=20, contracts=1, grid_spacing=1),
@@ -30,7 +30,7 @@ def _cfg(**over):
 
 
 def test_options_backtest_run():
-    cfg = BacktestConfig(strategy="sma", params={"fast_window": 10, "slow_window": 50}, mode="options",
+    cfg = BacktestConfig(strategy="rs_breakout", params={}, mode="options",
                          options=OptionStructureConfig(structure_type="bear_call_spread", dte_bars=20,
                                                        width=5, contracts=1, grid_spacing=1),
                          vol=VolModelConfig(iv_multiplier=1.2),

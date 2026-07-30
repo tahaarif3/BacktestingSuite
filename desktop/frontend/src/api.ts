@@ -9,6 +9,7 @@ import type {
   OptionPreview,
   OptionsBacktestResult,
   OptionStructureMeta,
+  PortfolioBacktestResult,
   PortfolioCreateResponse,
   PortfolioScore,
   PortfolioSessionConfig,
@@ -204,6 +205,15 @@ export const api = {
     window?: number;
     refresh?: boolean;
   }) => post<ScreenResponse>("/api/screener/scan", body),
+
+  // --- Automated portfolio backtest ---
+  runPortfolioBacktest: (body: {
+    tickers: string[] | null;
+    start: string;
+    end: string;
+    sensitivity: boolean;
+    config: Record<string, number | boolean>;
+  }) => post<PortfolioBacktestResult>("/api/portfolio-backtest/run", body),
 
   // --- Portfolio options replay ---
   createPortfolioSession: (config: PortfolioSessionConfig) =>

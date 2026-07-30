@@ -69,13 +69,6 @@ secrets/
 strat/*
 !strat/__init__.py
 !strat/base.py
-!strat/buy_and_hold.py
-!strat/sma_crossover.py
-!strat/ema_crossover.py
-!strat/rsi_mean_reversion.py
-!strat/bollinger_bands.py
-!strat/macd.py
-!strat/genetic_programming.py
 !strat/rs_breakout.py
 user_strategies/
 *secret*

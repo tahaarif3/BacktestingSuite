@@ -194,6 +194,18 @@ class TickerValidateRequest(BaseModel):
     end: Optional[str] = None
 
 
+class PortfolioBacktestRequest(BaseModel):
+    """Automated multi-position portfolio backtest. Any field of
+    portfolio_backtest.PortfolioBacktestConfig may be supplied; omitted fields
+    use the baseline defaults. `sensitivity` toggles the Phase-14 grid."""
+
+    tickers: Optional[List[str]] = None
+    start: str = "2016-01-01"
+    end: str = "2025-12-31"
+    config: Dict[str, Any] = Field(default_factory=dict)
+    sensitivity: bool = True
+
+
 class PortfolioSessionConfig(BaseModel):
     """A multi-symbol options portfolio replay (SPY clock + watchlist)."""
 

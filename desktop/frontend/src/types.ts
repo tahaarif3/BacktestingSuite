@@ -587,6 +587,65 @@ export interface OptionsBacktestResult {
   final_equity: number;
 }
 
+// --- Automated portfolio backtest -------------------------------------------
+
+export interface PBTTrade {
+  ticker: string;
+  sector: string;
+  signal_date: string | null;
+  entry_date: string;
+  entry_price: number;
+  exit_date: string;
+  exit_price: number;
+  shares: number;
+  initial_stop: number;
+  exit_reason: string;
+  gross_pnl: number;
+  commission: number;
+  net_pnl: number;
+  return_pct: number;
+  r_multiple: number;
+  holding_days: number;
+  mfe: number;
+  mae: number;
+}
+
+export interface PBTRegimeAgg {
+  days: number;
+  cum_return: number;
+  ann_return: number;
+}
+
+export interface PortfolioBacktestResult {
+  summary: Summary;
+  series: {
+    dates: string[];
+    equity: number[];
+    benchmark: number[];
+    equal_weight: number[];
+    drawdown: number[];
+    open_positions: number[];
+    exposure: number[];
+  };
+  trades: PBTTrade[];
+  trade_count: number;
+  open_positions: { ticker: string; sector: string; shares: number; entry_price: number; entry_date: string; current_stop: number }[];
+  regime: {
+    spy_above_200ma: PBTRegimeAgg;
+    spy_below_200ma: PBTRegimeAgg;
+    by_year: { year: number; return: number; days: number }[];
+  };
+  comparison: {
+    spy_buy_hold_return: number;
+    equal_weight_return: number;
+    no_market_filter_return: number;
+    no_rs_filter_return: number;
+  };
+  sensitivity: Record<string, { value: number; total_return?: number; cagr?: number; max_drawdown?: number; sharpe?: number; trades?: number; error?: string }[]>;
+  universe: string[];
+  warnings: string[];
+}
+
 // --- Portfolio options replay (multi-symbol) --------------------------------
 
 export interface PortfolioSessionConfig {

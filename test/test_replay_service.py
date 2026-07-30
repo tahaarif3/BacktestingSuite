@@ -46,8 +46,8 @@ def env(tmp_path, monkeypatch):
 
 def _cfg(**kw):
     base = dict(
-        strategy="sma",
-        params={"fast_window": 5, "slow_window": 20},
+        strategy="rs_breakout",
+        params={},
         sizer="fixed_shares",
         sizer_value=100,
         capital=100000.0,

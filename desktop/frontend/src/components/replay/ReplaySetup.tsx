@@ -36,8 +36,8 @@ export default function ReplaySetup(props: Props) {
     end: "2024-12-31",
     interval: "1d",
   });
-  const [strategy, setStrategy] = useState("sma");
-  const [params, setParams] = useState<Record<string, number>>({ fast_window: 10, slow_window: 50 });
+  const [strategy, setStrategy] = useState("rs_breakout");
+  const [params, setParams] = useState<Record<string, number>>({});
   const [short, setShort] = useState(false);
   const [sizer, setSizer] = useState("fixed_fractional");
   const [sizerValue, setSizerValue] = useState(0.5);

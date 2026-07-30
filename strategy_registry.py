@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from domain.interfaces import IStrategy
 from backtest.position_sizing import (
+    ATRPercentRiskSizer,
     FixedSharesSizer,
     FixedFractionalSizer,
     VolatilityBasedSizer,
@@ -33,16 +34,7 @@ def _try_import(module: str, clsname: str):
         return None
 
 
-BuyAndHoldStrategy = _try_import("strat.buy_and_hold", "BuyAndHoldStrategy")
-SMACrossoverStrategy = _try_import("strat.sma_crossover", "SMACrossoverStrategy")
-EMACrossoverStrategy = _try_import("strat.ema_crossover", "EMACrossoverStrategy")
-RSIMeanReversionStrategy = _try_import("strat.rsi_mean_reversion", "RSIMeanReversionStrategy")
-BollingerBandsStrategy = _try_import("strat.bollinger_bands", "BollingerBandsStrategy")
-MACDStrategy = _try_import("strat.macd", "MACDStrategy")
-GeneticProgrammingStrategy = _try_import("strat.genetic_programming", "GeneticProgrammingStrategy")
 RSBreakoutStrategy = _try_import("strat.rs_breakout", "RSBreakoutStrategy")
-
-DEFAULT_GP_JSON = "champion_gp.json"
 
 
 @dataclass
@@ -112,93 +104,6 @@ def _register(spec: StrategySpec) -> None:
 
 _register(
     StrategySpec(
-        id="buy_and_hold",
-        name="Buy & Hold",
-        cls=BuyAndHoldStrategy,
-        params=[],
-        supports_short=False,
-    )
-)
-_register(
-    StrategySpec(
-        id="sma",
-        name="SMA Crossover",
-        cls=SMACrossoverStrategy,
-        params=[
-            ParamSpec("fast_window", "Fast Window", "int", 10, 2, 200, 1),
-            ParamSpec("slow_window", "Slow Window", "int", 50, 3, 400, 1),
-        ],
-        supports_short=True,
-        wfa_grid={"fast_window": [5, 10, 20], "slow_window": [30, 50, 70]},
-    )
-)
-_register(
-    StrategySpec(
-        id="ema",
-        name="EMA Crossover",
-        cls=EMACrossoverStrategy,
-        params=[
-            ParamSpec("fast_window", "Fast Window", "int", 10, 2, 200, 1),
-            ParamSpec("slow_window", "Slow Window", "int", 50, 3, 400, 1),
-        ],
-        supports_short=True,
-        wfa_grid={"fast_window": [5, 10, 20], "slow_window": [30, 50, 70]},
-    )
-)
-_register(
-    StrategySpec(
-        id="rsi",
-        name="RSI Mean Reversion",
-        cls=RSIMeanReversionStrategy,
-        params=[
-            ParamSpec("window", "RSI Window", "int", 14, 2, 100, 1),
-            ParamSpec("oversold", "Oversold", "float", 30.0, 1, 50, 1),
-            ParamSpec("overbought", "Overbought", "float", 70.0, 50, 99, 1),
-            ParamSpec("exit_level", "Exit Level", "float", 50.0, 1, 99, 1),
-        ],
-        supports_short=True,
-        wfa_grid={"window": [10, 14, 20], "oversold": [25, 30, 35], "overbought": [65, 70, 75]},
-    )
-)
-_register(
-    StrategySpec(
-        id="bb",
-        name="Bollinger Bands Breakout",
-        cls=BollingerBandsStrategy,
-        params=[
-            ParamSpec("window", "Window", "int", 20, 3, 200, 1),
-            ParamSpec("num_std", "Std Dev Multiplier", "float", 2.0, 0.5, 4.0, 0.1),
-        ],
-        supports_short=True,
-        wfa_grid={"window": [15, 20, 25], "num_std": [1.5, 2.0, 2.5]},
-    )
-)
-_register(
-    StrategySpec(
-        id="macd",
-        name="MACD Trend Following",
-        cls=MACDStrategy,
-        params=[
-            ParamSpec("fast_window", "Fast EMA", "int", 12, 2, 100, 1),
-            ParamSpec("slow_window", "Slow EMA", "int", 26, 3, 200, 1),
-            ParamSpec("signal_window", "Signal", "int", 9, 2, 100, 1),
-        ],
-        supports_short=True,
-        wfa_grid={"fast_window": [10, 12, 15], "slow_window": [22, 26, 30], "signal_window": [7, 9, 11]},
-    )
-)
-_register(
-    StrategySpec(
-        id="gp",
-        name="Genetic Programming (Champion)",
-        cls=GeneticProgrammingStrategy,
-        params=[],
-        supports_short=False,
-        requires_file=DEFAULT_GP_JSON,
-    )
-)
-_register(
-    StrategySpec(
         id="rs_breakout",
         name="Relative-Strength Breakout",
         cls=RSBreakoutStrategy,
@@ -246,6 +151,12 @@ SIZERS: Dict[str, SizerSpec] = {
     "fixed_shares": SizerSpec("fixed_shares", "Fixed Shares", "Shares per trade", 100),
     "fixed_fractional": SizerSpec("fixed_fractional", "Fixed Fractional", "Fraction of equity", 0.5),
     "volatility": SizerSpec("volatility", "Volatility Adjusted", "Risk per trade ($)", 500),
+    "atr_percent_risk": SizerSpec(
+        "atr_percent_risk",
+        "ATR Risk (2x Stop)",
+        "Fraction of equity at risk",
+        0.005,
+    ),
 }
 
 
@@ -255,7 +166,7 @@ def build_strategy(
     strategy_id: str,
     values: Dict[str, Any],
     allow_short: bool = False,
-    gp_json: str = DEFAULT_GP_JSON,
+    gp_json: str = "champion_gp.json",
 ):
     """Instantiate a strategy and return (instance, resolved_params_dict).
 
@@ -289,6 +200,12 @@ def build_sizer(sizer_id: str, value: float, initial_capital: float):
         return FixedFractionalSizer(fraction=float(value), initial_capital=initial_capital)
     if sizer_id == "volatility":
         return VolatilityBasedSizer(target_risk_per_trade=float(value), window=20)
+    if sizer_id == "atr_percent_risk":
+        return ATRPercentRiskSizer(
+            risk_fraction=float(value),
+            window=14,
+            stop_multiple=2.0,
+        )
     raise ValueError(f"Unknown sizer: {sizer_id}")
 
 

@@ -18,11 +18,12 @@ import EditorPanel from "./components/EditorPanel";
 import ReplayPanel from "./components/replay/ReplayPanel";
 import PortfolioPanel from "./components/portfolio/PortfolioPanel";
 import ScannerPanel from "./components/ScannerPanel";
+import PortfolioBacktestPanel from "./components/PortfolioBacktestPanel";
 import UpdateBanner from "./components/UpdateBanner";
 
 const DEFAULT_CONFIG: BacktestConfig = {
-  strategy: "sma",
-  params: { fast_window: 10, slow_window: 50 },
+  strategy: "rs_breakout",
+  params: {},
   short: false,
   sizer: "fixed_fractional",
   sizer_value: 0.5,
@@ -37,7 +38,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
-type Tab = "results" | "robustness" | "compare" | "scanner" | "replay" | "portfolio" | "editor";
+type Tab = "results" | "robustness" | "compare" | "scanner" | "pbacktest" | "replay" | "portfolio" | "editor";
 
 export default function App() {
   const [strategies, setStrategies] = useState<StrategySpec[]>([]);
@@ -221,6 +222,9 @@ export default function App() {
           <div className={`tab ${tab === "scanner" ? "active" : ""}`} onClick={() => goTab("scanner")}>
             Scanner
           </div>
+          <div className={`tab ${tab === "pbacktest" ? "active" : ""}`} onClick={() => goTab("pbacktest")}>
+            Portfolio Backtest
+          </div>
           <div className={`tab ${tab === "replay" ? "active" : ""}`} onClick={() => goTab("replay")}>
             Replay
           </div>
@@ -260,6 +264,7 @@ export default function App() {
           )}
           {tab === "editor" && <EditorPanel onStrategiesChanged={onStrategiesChanged} />}
           {tab === "scanner" && <ScannerPanel onBacktest={onScanBacktest} onReplay={onScanReplay} />}
+          {tab === "pbacktest" && <PortfolioBacktestPanel />}
           {replayVisited && (
             <div style={{ display: tab === "replay" ? "block" : "none", height: "100%" }}>
               <ReplayPanel

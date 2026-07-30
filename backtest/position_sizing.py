@@ -193,3 +193,119 @@ class VolatilityBasedSizer(BasePositionSizer):
                 return 1.0
             avg_diff = sum(diffs) / len(diffs)
             return avg_diff if avg_diff > 1e-8 else 1.0
+
+
+class ATRPercentRiskSizer(BasePositionSizer):
+    """Risk a percentage of current equity using a fixed ATR stop distance.
+
+    Shares are fixed when a new position opens and remain unchanged until the
+    strategy exits.  With the defaults, position risk is:
+
+        0.5% of equity / (2 * ATR(14))
+    """
+
+    def __init__(
+        self,
+        risk_fraction: float = 0.005,
+        window: int = 14,
+        stop_multiple: float = 2.0,
+    ):
+        self.risk_fraction = max(0.0, float(risk_fraction))
+        self.window = max(2, int(window))
+        self.stop_multiple = max(0.01, float(stop_multiple))
+        self._history = []
+        self._previous_signal = 0.0
+        self._position_shares = 0.0
+
+    @staticmethod
+    def _true_range(data: pd.DataFrame) -> pd.Series:
+        previous_close = data["close"].shift(1)
+        return pd.concat(
+            [
+                data["high"] - data["low"],
+                (data["high"] - previous_close).abs(),
+                (data["low"] - previous_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+
+    def size_positions(self, data: pd.DataFrame) -> pd.Series:
+        required = {"signal", "high", "low", "close"}
+        if not required.issubset(data.columns):
+            raise ValueError(
+                "Data must contain signal, high, low, and close columns."
+            )
+
+        atr = self._true_range(data).rolling(
+            self.window, min_periods=self.window
+        ).mean()
+        entries = data["signal"].ne(0.0) & data["signal"].shift(
+            1, fill_value=0.0
+        ).eq(0.0)
+        risk_dollars = getattr(self, "initial_capital", 100000.0)
+        entry_shares = (
+            risk_dollars
+            * self.risk_fraction
+            / (self.stop_multiple * atr.replace(0.0, np.nan))
+        )
+        targets = entry_shares.where(entries).ffill()
+        targets = targets.where(data["signal"].ne(0.0), 0.0)
+        return (targets * np.sign(data["signal"])).fillna(0.0).astype(float)
+
+    def size_position(
+        self,
+        signal: float,
+        price: float,
+        current_equity: float,
+        current_bar: Bar,
+    ) -> float:
+        # A sizer can be reused across runs; reset if timestamps go backwards.
+        if (
+            self._history
+            and current_bar.timestamp <= self._history[-1].timestamp
+        ):
+            self._history = []
+            self._previous_signal = 0.0
+            self._position_shares = 0.0
+
+        self._history.append(current_bar)
+        if len(self._history) > self.window + 1:
+            self._history.pop(0)
+
+        direction = float(np.sign(signal))
+        if direction == 0.0:
+            self._previous_signal = 0.0
+            self._position_shares = 0.0
+            return 0.0
+
+        if self._previous_signal == 0.0 or np.sign(
+            self._previous_signal
+        ) != direction:
+            atr = self._calculate_atr()
+            risk_dollars = max(0.0, current_equity) * self.risk_fraction
+            self._position_shares = (
+                direction
+                * risk_dollars
+                / (self.stop_multiple * atr)
+            )
+
+        self._previous_signal = direction
+        return float(self._position_shares)
+
+    def _calculate_atr(self) -> float:
+        if len(self._history) < 2:
+            return 1.0
+
+        true_ranges = []
+        for i in range(1, len(self._history)):
+            current = self._history[i]
+            previous = self._history[i - 1]
+            true_ranges.append(
+                max(
+                    current.high - current.low,
+                    abs(current.high - previous.close),
+                    abs(current.low - previous.close),
+                )
+            )
+        atr = float(np.mean(true_ranges[-self.window :]))
+        return atr if np.isfinite(atr) and atr > 1e-8 else 1.0

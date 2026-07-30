@@ -29,9 +29,9 @@ def parse_args():
     # Strategy settings
     parser.add_argument(
         "--strategy",
-        choices=["buy_and_hold", "sma", "ema", "rsi", "bb", "macd", "gp"],
-        default="sma",
-        help="Trading strategy to execute (default: sma)"
+        choices=["rs_breakout"],
+        default="rs_breakout",
+        help="Trading strategy to execute (default: rs_breakout)"
     )
     
     # General strategy settings
@@ -230,24 +230,11 @@ def main():
     bars = loader.get_bars(args.data_path)
     print(f"Loaded {len(bars)} daily bars from {args.data_path}")
 
-    # 2. Map strategy selection to strategy class and parameters (via registry)
+    # 2. Map strategy selection to strategy class and parameters (via registry).
+    # Only the Relative-Strength Breakout strategy ships now; it uses its
+    # constructor defaults (override in the desktop app's config form).
     strategy_values_by_id = {
-        "buy_and_hold": {},
-        "sma": {"fast_window": args.fast_window, "slow_window": args.slow_window},
-        "ema": {"fast_window": args.fast_window, "slow_window": args.slow_window},
-        "rsi": {
-            "window": args.rsi_window,
-            "oversold": args.rsi_oversold,
-            "overbought": args.rsi_overbought,
-            "exit_level": args.rsi_exit,
-        },
-        "bb": {"window": args.bb_window, "num_std": args.bb_std},
-        "macd": {
-            "fast_window": args.macd_fast,
-            "slow_window": args.macd_slow,
-            "signal_window": args.macd_signal,
-        },
-        "gp": {"json_path": args.gp_json},
+        "rs_breakout": {},
     }
     strategy, strategy_params = build_strategy(
         args.strategy,
