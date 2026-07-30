@@ -587,6 +587,34 @@ export interface OptionsBacktestResult {
   final_equity: number;
 }
 
+// --- Screener ---------------------------------------------------------------
+
+export interface ScreenResult {
+  symbol: string;
+  file: string;
+  bars: number;
+  has_reference: boolean;
+  armed_now: boolean;
+  long_now: boolean;
+  fresh_entry: boolean;
+  entries_in_window: number;
+  total_entries: number;
+  last_entry_bars_ago: number | null;
+  rs_now: number;
+  last_close: number;
+  last_date: string | null;
+  score: number;
+  warning: string | null;
+}
+
+export interface ScreenResponse {
+  results: ScreenResult[];
+  errors: { symbol: string; error: string }[];
+  scanned: number;
+  window: number;
+  as_of: string;
+}
+
 export interface OptionsReplayTrack {
   summary: Summary;
   series: { dates: (number | string)[]; equity: number[]; benchmark: number[] };

@@ -508,3 +508,10 @@ tr:hover td { background: var(--bg-elev); }
 .regime-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
 .regime-tag.on { color: var(--success); border-color: var(--success); }
 .regime-tag.armed { color: #04121f; background: var(--success); font-weight: 600; border-color: var(--success); }
+
+/* --- Scanner --- */
+.scanner { padding: 20px; overflow-y: auto; height: 100%; }
+.scanner textarea { width: 100%; resize: vertical; font-family: inherit; }
+.scan-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.scan-actions { display: flex; gap: 6px; }
+.row-armed { background: rgba(52, 211, 153, 0.06); }

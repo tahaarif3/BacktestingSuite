@@ -192,3 +192,15 @@ class TickerValidateRequest(BaseModel):
     interval: str = "1d"
     start: Optional[str] = None
     end: Optional[str] = None
+
+
+class ScreenRequest(BaseModel):
+    """Scan a basket for the RS-Breakout setup. Empty tickers -> default watchlist."""
+
+    tickers: Optional[List[str]] = None
+    start: str
+    end: str
+    interval: str = "1d"
+    params: Dict[str, Any] = Field(default_factory=dict)
+    window: int = 60          # bars counted as "recent" for entries-in-window
+    refresh: bool = True      # re-fetch data + SPY so "armed now" is current

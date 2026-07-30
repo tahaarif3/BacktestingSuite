@@ -22,10 +22,11 @@ interface Props {
   onStart: (config: ReplaySessionConfig) => void;
   loading: boolean;
   error: string | null;
+  prefill?: { file: string; strategy: string } | null;
 }
 
 export default function ReplaySetup(props: Props) {
-  const { strategies, sizers, dataFiles, onFetch, fetchBusy, onStart, loading, error } = props;
+  const { strategies, sizers, dataFiles, onFetch, fetchBusy, onStart, loading, error, prefill } = props;
 
   const [source, setSource] = useState<"file" | "ticker">("file");
   const [file, setFile] = useState<string>("");
@@ -54,6 +55,21 @@ export default function ReplaySetup(props: Props) {
   useEffect(() => {
     api.listOptionStructures().then(setStructures).catch(() => {});
   }, []);
+
+  // Apply a prefill handed over from the scanner ("trade this hit").
+  useEffect(() => {
+    if (!prefill) return;
+    setSource("file");
+    setFile(prefill.file);
+    const s = strategies.find((x) => x.id === prefill.strategy);
+    if (s) {
+      const p: Record<string, number> = {};
+      s.params.forEach((param) => (p[param.name] = param.default));
+      setStrategy(prefill.strategy);
+      setParams(p);
+      setShort(false);
+    }
+  }, [prefill, strategies]);
 
   const spec = useMemo(() => strategies.find((s) => s.id === strategy), [strategies, strategy]);
   const sizerSpec = sizers.find((s) => s.id === sizer);

@@ -12,6 +12,7 @@ interface Props {
   onFetch: (sel: TickerSelection) => void;
   fetchBusy: boolean;
   active: boolean;
+  prefill?: { file: string; strategy: string } | null;
 }
 
 export default function ReplayPanel(props: Props) {
@@ -29,6 +30,7 @@ export default function ReplayPanel(props: Props) {
         onStart={session.start}
         loading={state.phase === "loading"}
         error={state.error}
+        prefill={props.prefill}
       />
     );
   }

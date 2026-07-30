@@ -127,9 +127,19 @@ class RSBreakoutStrategy(BaseStrategy):
     # --- signal generation ----------------------------------------------------
 
     def generate_signals(self, bars: List[Bar]) -> List[float]:
+        return self._compute(bars)["signal"]
+
+    def diagnostics(self, bars: List[Bar]) -> dict:
+        """Per-bar internals behind the signal — regime legs, relative strength,
+        breakout/momentum flags — so a scanner can rank names and the UI can
+        explain *why* a signal fired. Single source of truth with the signal."""
+        return self._compute(bars)
+
+    def _compute(self, bars: List[Bar]) -> dict:
         n = len(bars)
         if n == 0:
-            return []
+            return {"signal": [], "has_reference": False, "regime_armed": [], "rs": [],
+                    "stock_up": [], "spy_down": [], "broke_out": [], "momentum_ok": [], "enter": []}
         idx = pd.Index([b.timestamp for b in bars])
         C = pd.Series([b.close for b in bars], index=idx, dtype=float)
         O = pd.Series([b.open for b in bars], index=idx, dtype=float)
@@ -139,7 +149,12 @@ class RSBreakoutStrategy(BaseStrategy):
 
         spy = self._load_spy(idx)
         if spy is None:
-            return [0.0] * n  # can't judge relative strength -> stay flat, honestly
+            # Can't judge relative strength -> stay flat, honestly.
+            zeros = [0.0] * n
+            falses = [False] * n
+            return {"signal": zeros, "has_reference": False, "regime_armed": falses,
+                    "rs": zeros, "stock_up": falses, "spy_down": falses,
+                    "broke_out": falses, "momentum_ok": falses, "enter": falses}
         Sc = spy["spy_close"].astype(float)
         So = spy["spy_open"].astype(float)
 
@@ -175,7 +190,8 @@ class RSBreakoutStrategy(BaseStrategy):
         bars_into_session = new_session.groupby((new_session).cumsum()).cumcount()
         in_window = bars_into_session < self.entry_window_bars
 
-        enter = (stock_up & spy_down & rs_ok & premarket_ok & broke_out & momentum_ok & in_window).fillna(False)
+        regime = (stock_up & spy_down & rs_ok).fillna(False)
+        enter = (regime & premarket_ok & broke_out & momentum_ok & in_window).fillna(False)
         enter_arr = enter.to_numpy()
         level_arr = level.to_numpy()
         close_arr = C.to_numpy()
@@ -219,4 +235,15 @@ class RSBreakoutStrategy(BaseStrategy):
                     signals[i] = 1.0
                 else:
                     signals[i] = 0.0
-        return signals
+
+        return {
+            "signal": signals,
+            "has_reference": True,
+            "regime_armed": regime.to_numpy().tolist(),
+            "rs": rs.fillna(0.0).to_numpy().tolist(),
+            "stock_up": stock_up.fillna(False).to_numpy().tolist(),
+            "spy_down": spy_down.fillna(False).to_numpy().tolist(),
+            "broke_out": broke_out.fillna(False).to_numpy().tolist(),
+            "momentum_ok": momentum_ok.fillna(False).to_numpy().tolist(),
+            "enter": enter_arr.tolist(),
+        }

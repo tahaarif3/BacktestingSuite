@@ -16,6 +16,7 @@ import RobustnessPanel from "./components/RobustnessPanel";
 import ComparePanel from "./components/ComparePanel";
 import EditorPanel from "./components/EditorPanel";
 import ReplayPanel from "./components/replay/ReplayPanel";
+import ScannerPanel from "./components/ScannerPanel";
 import UpdateBanner from "./components/UpdateBanner";
 
 const DEFAULT_CONFIG: BacktestConfig = {
@@ -35,7 +36,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
-type Tab = "results" | "robustness" | "compare" | "replay" | "editor";
+type Tab = "results" | "robustness" | "compare" | "scanner" | "replay" | "editor";
 
 export default function App() {
   const [strategies, setStrategies] = useState<StrategySpec[]>([]);
@@ -50,12 +51,44 @@ export default function App() {
 
   const [tab, setTab] = useState<Tab>("results");
   const [replayVisited, setReplayVisited] = useState(false);
+  const [replayPrefill, setReplayPrefill] = useState<{ file: string; strategy: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState({ run: false, robustness: false, fetch: false });
 
   const goTab = (t: Tab) => {
     if (t === "replay") setReplayVisited(true);
     setTab(t);
+  };
+
+  const rsBreakoutParams = (): Record<string, number> => {
+    const spec = strategies.find((s) => s.id === "rs_breakout");
+    const p: Record<string, number> = {};
+    spec?.params.forEach((pp) => (p[pp.name] = pp.default));
+    return p;
+  };
+
+  const onScanBacktest = (file: string) => {
+    const cfg: BacktestConfig = {
+      ...DEFAULT_CONFIG,
+      strategy: "rs_breakout",
+      params: rsBreakoutParams(),
+      mode: "equity",
+      options: null,
+      vol: null,
+      data: { source: "file", file, interval: "1d" },
+    };
+    setConfig(cfg);
+    void guard("run", async () => {
+      const res = await api.runBacktest(cfg);
+      setResult(res);
+      setTab("results");
+    });
+  };
+
+  const onScanReplay = (file: string) => {
+    setReplayPrefill({ file, strategy: "rs_breakout" });
+    setReplayVisited(true);
+    setTab("replay");
   };
 
   useEffect(() => {
@@ -180,6 +213,9 @@ export default function App() {
             Compare
             {compareRuns.length > 0 && <span className="badge">{compareRuns.length}</span>}
           </div>
+          <div className={`tab ${tab === "scanner" ? "active" : ""}`} onClick={() => goTab("scanner")}>
+            Scanner
+          </div>
           <div className={`tab ${tab === "replay" ? "active" : ""}`} onClick={() => goTab("replay")}>
             Replay
           </div>
@@ -215,6 +251,7 @@ export default function App() {
             <ComparePanel runs={compareRuns} onClear={onClearCompare} onRemove={onRemoveCompare} />
           )}
           {tab === "editor" && <EditorPanel onStrategiesChanged={onStrategiesChanged} />}
+          {tab === "scanner" && <ScannerPanel onBacktest={onScanBacktest} onReplay={onScanReplay} />}
           {replayVisited && (
             <div style={{ display: tab === "replay" ? "block" : "none", height: "100%" }}>
               <ReplayPanel
@@ -224,6 +261,7 @@ export default function App() {
                 onFetch={onFetch}
                 fetchBusy={busy.fetch}
                 active={tab === "replay"}
+                prefill={replayPrefill}
               />
             </div>
           )}

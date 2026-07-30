@@ -9,6 +9,7 @@ import type {
   OptionPreview,
   OptionsBacktestResult,
   OptionStructureMeta,
+  ScreenResponse,
   ReplayBars,
   ReplayOrderRequest,
   ReplayOrderResponse,
@@ -184,6 +185,20 @@ export const api = {
 
   deleteReplaySession: (id: string) =>
     del<{ ok: boolean }>(`/api/replay/sessions/${id}`),
+
+  // --- Screener ---
+  getWatchlist: () =>
+    get<{ tickers: string[] }>("/api/screener/watchlist").then((r) => r.tickers),
+
+  scanScreener: (body: {
+    tickers: string[] | null;
+    start: string;
+    end: string;
+    interval?: string;
+    params?: Record<string, number>;
+    window?: number;
+    refresh?: boolean;
+  }) => post<ScreenResponse>("/api/screener/scan", body),
 
   // --- Options ---
   listOptionStructures: () =>
