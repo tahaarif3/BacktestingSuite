@@ -528,3 +528,8 @@ tr:hover td { background: var(--bg-elev); }
 .radar-badges { display: flex; gap: 4px; }
 .radar-rs { font-variant-numeric: tabular-nums; }
 .radar-px { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* --- Side-by-side charts (portfolio) --- */
+.chart-row { display: flex; gap: 10px; align-items: stretch; }
+.chart-col { flex: 1 1 0; min-width: 0; }
+.chart-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; padding-left: 4px; }
