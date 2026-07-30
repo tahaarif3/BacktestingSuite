@@ -194,6 +194,33 @@ class TickerValidateRequest(BaseModel):
     end: Optional[str] = None
 
 
+class PortfolioSessionConfig(BaseModel):
+    """A multi-symbol options portfolio replay (SPY clock + watchlist)."""
+
+    tickers: Optional[List[str]] = None
+    start: str
+    end: str
+    capital: float = 100000.0
+    timing: Literal["next_open", "next_close"] = "next_close"
+    warmup_bars: int = 120
+    refresh: bool = True
+    params: Dict[str, Any] = Field(default_factory=dict)
+    vol: Optional[VolModelConfig] = None
+
+
+class CreatePortfolioRequest(BaseModel):
+    config: PortfolioSessionConfig
+
+
+class PortfolioOrderRequest(BaseModel):
+    bar_index: int
+    symbol: str
+    action: Literal["open", "close"] = "open"
+    structure: Optional[OptionStructureConfig] = None
+    target_structure_id: Optional[str] = None
+    note: str = ""
+
+
 class ScreenRequest(BaseModel):
     """Scan a basket for the RS-Breakout setup. Empty tickers -> default watchlist."""
 

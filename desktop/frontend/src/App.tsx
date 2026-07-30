@@ -16,6 +16,7 @@ import RobustnessPanel from "./components/RobustnessPanel";
 import ComparePanel from "./components/ComparePanel";
 import EditorPanel from "./components/EditorPanel";
 import ReplayPanel from "./components/replay/ReplayPanel";
+import PortfolioPanel from "./components/portfolio/PortfolioPanel";
 import ScannerPanel from "./components/ScannerPanel";
 import UpdateBanner from "./components/UpdateBanner";
 
@@ -36,7 +37,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
-type Tab = "results" | "robustness" | "compare" | "scanner" | "replay" | "editor";
+type Tab = "results" | "robustness" | "compare" | "scanner" | "replay" | "portfolio" | "editor";
 
 export default function App() {
   const [strategies, setStrategies] = useState<StrategySpec[]>([]);
@@ -51,14 +52,18 @@ export default function App() {
 
   const [tab, setTab] = useState<Tab>("results");
   const [replayVisited, setReplayVisited] = useState(false);
+  const [portfolioVisited, setPortfolioVisited] = useState(false);
   const [replayPrefill, setReplayPrefill] = useState<{ file: string; strategy: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState({ run: false, robustness: false, fetch: false });
 
   const goTab = (t: Tab) => {
     if (t === "replay") setReplayVisited(true);
+    if (t === "portfolio") setPortfolioVisited(true);
     setTab(t);
   };
+
+  const fullTab = tab === "replay" || tab === "portfolio";
 
   const rsBreakoutParams = (): Record<string, number> => {
     const spec = strategies.find((s) => s.id === "rs_breakout");
@@ -185,8 +190,8 @@ export default function App() {
   };
 
   return (
-    <div className={`app ${tab === "replay" ? "app--full" : ""}`}>
-      {tab !== "replay" && (
+    <div className={`app ${fullTab ? "app--full" : ""}`}>
+      {!fullTab && (
         <ConfigPanel
           strategies={strategies}
           sizers={sizers}
@@ -219,6 +224,9 @@ export default function App() {
           <div className={`tab ${tab === "replay" ? "active" : ""}`} onClick={() => goTab("replay")}>
             Replay
           </div>
+          <div className={`tab ${tab === "portfolio" ? "active" : ""}`} onClick={() => goTab("portfolio")}>
+            Portfolio
+          </div>
           <div className={`tab ${tab === "editor" ? "active" : ""}`} onClick={() => goTab("editor")}>
             Editor
           </div>
@@ -242,7 +250,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className={`content ${tab === "replay" ? "content--flush" : ""}`}>
+        <div className={`content ${fullTab ? "content--flush" : ""}`}>
           <UpdateBanner />
           {error && <div className="error">{error}</div>}
           {tab === "results" && <ResultsDashboard result={result} />}
@@ -263,6 +271,11 @@ export default function App() {
                 active={tab === "replay"}
                 prefill={replayPrefill}
               />
+            </div>
+          )}
+          {portfolioVisited && (
+            <div style={{ display: tab === "portfolio" ? "block" : "none", height: "100%" }}>
+              <PortfolioPanel active={tab === "portfolio"} />
             </div>
           )}
         </div>

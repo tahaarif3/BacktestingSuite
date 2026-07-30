@@ -587,6 +587,137 @@ export interface OptionsBacktestResult {
   final_equity: number;
 }
 
+// --- Portfolio options replay (multi-symbol) --------------------------------
+
+export interface PortfolioSessionConfig {
+  tickers: string[] | null;
+  start: string;
+  end: string;
+  capital: number;
+  timing: string;
+  warmup_bars: number;
+  refresh: boolean;
+  params?: Record<string, number>;
+  vol?: VolModelConfig | null;
+}
+
+export interface RadarRow {
+  symbol: string;
+  available: boolean;
+  armed: boolean;
+  long: boolean;
+  fresh_entry: boolean;
+  rs: number;
+  close: number | null;
+  has_reference: boolean;
+}
+
+export interface PortfolioPosition {
+  symbol: string;
+  id: string;
+  structure_type: string;
+  contracts: number;
+  dte_bars: number;
+  value: number;
+  max_risk: number | null;
+  breakevens: number[];
+  greeks: OptionGreeks;
+  legs: { kind: string; strike: number; quantity: number; mark: number; delta: number; theta: number }[];
+}
+
+export interface PortfolioAccount {
+  cash: number;
+  equity: number;
+  net_liq: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_return: number;
+  max_risk: number;
+  buying_power_used: number;
+  net_delta: number;
+  net_theta: number;
+  net_vega: number;
+  positions: PortfolioPosition[];
+}
+
+export interface PortfolioFill {
+  symbol: string;
+  structure_id: string;
+  fill_index: number;
+  action: string;
+  structure_type: string;
+  spot: number;
+  net_cash: number;
+  realized_pnl: number;
+}
+
+export interface PortfolioState {
+  session_id: string;
+  cursor: number;
+  high_water: number;
+  start_index: number;
+  total_bars: number;
+  at_end: boolean;
+  radar: RadarRow[];
+  account: PortfolioAccount;
+  fills: PortfolioFill[];
+  equity_tail: number[];
+  warnings: string[];
+}
+
+export interface PortfolioCreateResponse {
+  session_id: string;
+  total_bars: number;
+  start_index: number;
+  cursor: number;
+  capital: number;
+  symbols: string[];
+  signal_bars: number[];
+  dates: string[];
+  spy: { o: (number | null)[]; h: (number | null)[]; l: (number | null)[]; c: (number | null)[]; v: (number | null)[] };
+  warnings: string[];
+  state: PortfolioState;
+}
+
+export interface PortfolioSymbolBars {
+  symbol: string;
+  dates: string[];
+  o: (number | null)[];
+  h: (number | null)[];
+  l: (number | null)[];
+  c: (number | null)[];
+  v: (number | null)[];
+  signal: number[];
+  regime: number[];
+}
+
+export interface PortfolioTrade {
+  symbol: string;
+  structure: string;
+  contracts: number;
+  open_index: number;
+  close_index: number;
+  pnl_usd: number;
+  pnl_pct: number;
+  max_risk: number;
+  reason: string;
+}
+
+export interface PortfolioScore {
+  cursor: number;
+  dates: string[];
+  equity: number[];
+  benchmark: number[];
+  final_equity: number;
+  total_return: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  trades: PortfolioTrade[];
+  win_rate: number;
+  total_trades: number;
+  warnings: string[];
+}
+
 // --- Screener ---------------------------------------------------------------
 
 export interface ScreenResult {

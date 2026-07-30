@@ -25,6 +25,8 @@ from desktop.backend.schemas import (
     ReplayOptionOrderRequest,
     ReplayOrderRequest,
     RewindRequest,
+    CreatePortfolioRequest,
+    PortfolioOrderRequest,
     RobustnessRequest,
     SaveStrategyRequest,
     ScreenRequest,
@@ -35,6 +37,7 @@ from desktop.backend.services import (
     backtest_service,
     data_service,
     market_meta,
+    portfolio_service,
     replay_service,
     robustness_service,
     screener_service,
@@ -199,6 +202,94 @@ def post_screener_scan(req: ScreenRequest):
 @app.get("/api/screener/watchlist")
 def get_screener_watchlist():
     return {"tickers": screener_service.DEFAULT_WATCHLIST}
+
+
+# --- Portfolio options replay (multi-symbol) --------------------------------
+
+
+@app.post("/api/portfolio/sessions")
+def post_portfolio_session(req: CreatePortfolioRequest):
+    try:
+        return portfolio_service.create_session(req.config.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/portfolio/sessions/{sid}")
+def get_portfolio_state(sid: str):
+    try:
+        return portfolio_service.get_state(sid)
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/portfolio/sessions/{sid}/symbol/{symbol}")
+def get_portfolio_symbol(sid: str, symbol: str):
+    try:
+        return portfolio_service.symbol_bars(sid, symbol)
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/portfolio/sessions/{sid}/orders")
+def post_portfolio_order(sid: str, req: PortfolioOrderRequest):
+    try:
+        return portfolio_service.submit_order(sid, req.model_dump())
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except portfolio_service.OrderRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/portfolio/sessions/{sid}/seek")
+def post_portfolio_seek(sid: str, req: SeekRequest):
+    try:
+        return portfolio_service.seek(sid, req.to_index)
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/portfolio/sessions/{sid}/rewind")
+def post_portfolio_rewind(sid: str, req: SeekRequest):
+    try:
+        return portfolio_service.rewind(sid, req.to_index)
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/portfolio/sessions/{sid}/reset")
+def post_portfolio_reset(sid: str):
+    try:
+        return portfolio_service.reset(sid)
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/portfolio/sessions/{sid}/orders/undo")
+def post_portfolio_undo(sid: str):
+    try:
+        return portfolio_service.undo(sid)
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except portfolio_service.OrderRejected as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.get("/api/portfolio/sessions/{sid}/score")
+def get_portfolio_score(sid: str):
+    try:
+        return portfolio_service.score(sid)
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/portfolio/sessions/{sid}")
+def delete_portfolio_session(sid: str):
+    try:
+        portfolio_service.delete_session(sid)
+        return {"ok": True}
+    except portfolio_service.SessionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # --- Options metadata -------------------------------------------------------
