@@ -9,6 +9,11 @@ import type {
   OptionPreview,
   OptionsBacktestResult,
   OptionStructureMeta,
+  PortfolioCreateResponse,
+  PortfolioScore,
+  PortfolioSessionConfig,
+  PortfolioState,
+  PortfolioSymbolBars,
   ScreenResponse,
   ReplayBars,
   ReplayOrderRequest,
@@ -199,6 +204,32 @@ export const api = {
     window?: number;
     refresh?: boolean;
   }) => post<ScreenResponse>("/api/screener/scan", body),
+
+  // --- Portfolio options replay ---
+  createPortfolioSession: (config: PortfolioSessionConfig) =>
+    post<PortfolioCreateResponse>("/api/portfolio/sessions", { config }),
+
+  getPortfolioState: (id: string) => get<PortfolioState>(`/api/portfolio/sessions/${id}`),
+
+  getPortfolioSymbol: (id: string, symbol: string) =>
+    get<PortfolioSymbolBars>(`/api/portfolio/sessions/${id}/symbol/${symbol}`),
+
+  submitPortfolioOrder: (id: string, order: unknown) =>
+    post<{ accepted: boolean; state: PortfolioState }>(`/api/portfolio/sessions/${id}/orders`, order),
+
+  seekPortfolio: (id: string, toIndex: number) =>
+    post<PortfolioState>(`/api/portfolio/sessions/${id}/seek`, { to_index: toIndex }),
+
+  rewindPortfolio: (id: string, toIndex: number) =>
+    post<PortfolioState>(`/api/portfolio/sessions/${id}/rewind`, { to_index: toIndex }),
+
+  resetPortfolio: (id: string) => post<PortfolioState>(`/api/portfolio/sessions/${id}/reset`, {}),
+
+  undoPortfolio: (id: string) => post<PortfolioState>(`/api/portfolio/sessions/${id}/orders/undo`, {}),
+
+  scorePortfolio: (id: string) => get<PortfolioScore>(`/api/portfolio/sessions/${id}/score`),
+
+  deletePortfolioSession: (id: string) => del<{ ok: boolean }>(`/api/portfolio/sessions/${id}`),
 
   // --- Options ---
   listOptionStructures: () =>
