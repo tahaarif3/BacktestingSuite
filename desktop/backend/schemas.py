@@ -202,6 +202,7 @@ class PortfolioBacktestRequest(BaseModel):
     tickers: Optional[List[str]] = None
     start: str = "2016-01-01"
     end: str = "2025-12-31"
+    interval: str = "1d"
     config: Dict[str, Any] = Field(default_factory=dict)
     sensitivity: bool = True
 
@@ -212,6 +213,7 @@ class PortfolioSessionConfig(BaseModel):
     tickers: Optional[List[str]] = None
     start: str
     end: str
+    interval: str = "1d"
     capital: float = 100000.0
     timing: Literal["next_open", "next_close"] = "next_close"
     warmup_bars: int = 120

@@ -140,6 +140,7 @@ def build_portfolio_options_ledger(
     timing: str = "next_open",
     risk_free_rate: float = 0.04,
     margin_policy: str = "defined_risk",
+    annualization: float = 252.0,
 ) -> PortfolioLedgerResult:
     n_axis = len(dates)
     if n_axis == 0:
@@ -179,7 +180,7 @@ def build_portfolio_options_ledger(
                 continue
             for sid in [s for s, st in open_states[sym].items() if st.structure.expiry_index <= t]:
                 st = open_states[sym].pop(sid)
-                marked = mark_structure(st.structure, spot_c, t, r, iv[sym][t])
+                marked = mark_structure(st.structure, spot_c, t, r, iv[sym][t], annualization)
                 exit_value = marked["value"]
                 cash += exit_value
                 realized = st.entry_cash + exit_value - st.open_costs
@@ -210,9 +211,10 @@ def build_portfolio_options_ledger(
                     continue
                 if order.action == "open":
                     structure = build_structure(order.to_spec(), S=spot, sigma=iv[sym][t],
-                                                r=r, open_index=t, structure_id=order.id)
+                                                r=r, open_index=t, structure_id=order.id,
+                                                annualization=annualization)
                     entry_cash = structure.net_cash_at_open
-                    marked = mark_structure(structure, spot, t, r, iv[sym][t])
+                    marked = mark_structure(structure, spot, t, r, iv[sym][t], annualization)
                     costs = _leg_costs_from_marks(exec_model, marked["legs"])
                     cash += entry_cash - costs
                     ml = structure.max_loss
@@ -233,7 +235,7 @@ def build_portfolio_options_ledger(
                     if st is None:
                         warnings.append(f"{sym}: close for unknown/closed structure {sid}")
                         continue
-                    marked = mark_structure(st.structure, spot, t, r, iv[sym][t])
+                    marked = mark_structure(st.structure, spot, t, r, iv[sym][t], annualization)
                     exit_value = marked["value"]
                     costs = _leg_costs_from_marks(exec_model, marked["legs"])
                     cash += exit_value - costs
@@ -260,7 +262,7 @@ def build_portfolio_options_ledger(
             if spot_c is None:
                 continue
             for st in open_states[sym].values():
-                holdings += mark_structure(st.structure, spot_c, t, r, iv[sym][t])["value"]
+                holdings += mark_structure(st.structure, spot_c, t, r, iv[sym][t], annualization)["value"]
         equity = cash + holdings
         cash_curve[t] = cash
         equity_curve[t] = equity
@@ -277,7 +279,7 @@ def build_portfolio_options_ledger(
             open_by_symbol[sym] = [st.structure for st in alive]
         for st in alive:
             if spot_c is not None:
-                marked = mark_structure(st.structure, spot_c, n - 1, r, iv[sym][n - 1])
+                marked = mark_structure(st.structure, spot_c, n - 1, r, iv[sym][n - 1], annualization)
                 unrealized += st.entry_cash + marked["value"] - st.open_costs
             if st.max_risk != float("inf"):
                 total_max_risk += st.max_risk

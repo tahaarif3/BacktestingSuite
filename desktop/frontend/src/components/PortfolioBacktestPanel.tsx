@@ -29,9 +29,25 @@ const SENS_LABELS: Record<string, string> = {
 
 export default function PortfolioBacktestPanel() {
   const [tickers, setTickers] = useState("");
+  const [interval, setIntervalValue] = useState("1d");
   const [start, setStart] = useState("2016-01-01");
   const [end, setEnd] = useState("2025-12-31");
   const [capital, setCapital] = useState(100000);
+
+  const onIntervalChange = (iv: string) => {
+    setIntervalValue(iv);
+    const today = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    if (iv === "5m" || iv === "15m") {
+      const s = new Date(today); s.setDate(s.getDate() - 45);
+      setStart(iso(s)); setEnd(iso(today));
+    } else if (iv === "1h") {
+      const s = new Date(today); s.setDate(s.getDate() - 540);
+      setStart(iso(s)); setEnd(iso(today));
+    } else {
+      setStart("2016-01-01"); setEnd("2025-12-31");
+    }
+  };
   const [maxPos, setMaxPos] = useState(10);
   const [maxSector, setMaxSector] = useState(2);
   const [risk, setRisk] = useState(0.005);
@@ -59,6 +75,7 @@ export default function PortfolioBacktestPanel() {
         tickers: list.length ? list : null,
         start,
         end,
+        interval,
         sensitivity,
         config: {
           initial_capital: capital, max_positions: maxPos, max_per_sector: maxSector,
@@ -92,10 +109,25 @@ export default function PortfolioBacktestPanel() {
           <textarea rows={2} value={tickers} onChange={(e) => setTickers(e.target.value)} />
         </div>
         <div className="row">
+          <div className="field">
+            <label>Timeframe</label>
+            <select value={interval} onChange={(e) => onIntervalChange(e.target.value)}>
+              <option value="1d">Daily</option>
+              <option value="1h">Hourly</option>
+              <option value="15m">15-minute</option>
+              <option value="5m">5-minute</option>
+            </select>
+          </div>
           <div className="field"><label>Start</label><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
           <div className="field"><label>End</label><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
           <div className="field"><label>Capital ($)</label><input type="number" value={capital} onChange={(e) => setCapital(+e.target.value || 0)} /></div>
         </div>
+        {interval !== "1d" && (
+          <p className="hint">
+            Intraday: history is limited (~60 days for 5m/15m, ~2 years for 1h), and window params
+            (Market MA, breakout, ATR) are counted in {interval} <em>bars</em> — shrink them accordingly.
+          </p>
+        )}
         <div className="row">
           <div className="field"><label>Max positions</label><input type="number" value={maxPos} onChange={(e) => setMaxPos(+e.target.value || 1)} /></div>
           <div className="field"><label>Max / sector</label><input type="number" value={maxSector} onChange={(e) => setMaxSector(+e.target.value || 1)} /></div>

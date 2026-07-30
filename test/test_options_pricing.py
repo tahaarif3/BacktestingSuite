@@ -52,6 +52,18 @@ def test_zero_vol_no_crash():
     assert bs_price(100, 200, 0.5, 0.05, 0.0, "call") == pytest.approx(0.0, abs=1e-9)
 
 
+def test_bars_per_year_and_theta_scaling():
+    from options.pricing import bars_per_year
+    assert bars_per_year("1d") == 252
+    assert bars_per_year("1h") == 1764
+    assert bars_per_year("5m") == 19656
+    # theta is "per bar": doubling bars/year halves per-bar decay; price unchanged.
+    g1 = bs_greeks(100, 100, 1.0, 0.04, 0.2, "call", annualization=252)
+    g2 = bs_greeks(100, 100, 1.0, 0.04, 0.2, "call", annualization=504)
+    assert g1["theta"] == pytest.approx(2 * g2["theta"])
+    assert bs_price(100, 100, 1.0, 0.05, 0.2, "call") == pytest.approx(10.4506, abs=1e-3)
+
+
 def test_delta_bounds():
     # call delta in (0,1), put delta in (-1,0)
     assert 0.0 < bs_delta(100, 100, 1.0, 0.02, 0.2, "call") < 1.0

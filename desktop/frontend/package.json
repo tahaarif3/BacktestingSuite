@@ -1,6 +1,6 @@
 {
   "name": "backtesting-suite-desktop",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Interactive desktop app for the SPY event-driven BacktestingSuite",
   "author": "BacktestingSuite",
   "main": "electron/main.cjs",

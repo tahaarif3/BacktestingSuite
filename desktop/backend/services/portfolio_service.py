@@ -29,6 +29,7 @@ from domain.models import Bar
 from backtest.execution import ExecutionModel
 from strat.rs_breakout import RSBreakoutStrategy
 from options.volatility import realized_vol_series, iv_for_bar
+from options.pricing import bars_per_year
 from options.portfolio import mark_structure
 from options.portfolio_ledger import PortfolioOptionOrder, build_portfolio_options_ledger
 
@@ -73,6 +74,8 @@ class PortfolioSession:
     timing: str
     risk_free_rate: float
     margin_policy: str
+    interval: str
+    annualization: float
     dates: List[datetime]
     start_index: int
     cursor: int
@@ -89,7 +92,8 @@ class PortfolioSession:
 
 
 def _iv_from_closes(closes: List[Optional[float]], window: int, mult: float,
-                    override: Optional[float], floor: float, cap: float) -> List[float]:
+                    override: Optional[float], floor: float, cap: float,
+                    annualization: float = 252.0) -> List[float]:
     # forward/back-fill for a continuous vol estimate; only used where a spot exists
     filled: List[float] = []
     last = None
@@ -99,16 +103,17 @@ def _iv_from_closes(closes: List[Optional[float]], window: int, mult: float,
         filled.append(last if last is not None else 0.0)
     first = next((x for x in filled if x > 0), 1.0)
     filled = [x if x > 0 else first for x in filled]
-    rv = realized_vol_series(filled, window=window)
+    rv = realized_vol_series(filled, window=window, annualization=annualization)
     return [iv_for_bar(v, iv_multiplier=mult, iv_override=override, iv_floor=floor, iv_cap=cap)
             for v in rv]
 
 
 def _align(sym_bars: List[Bar], axis_dates: List[datetime]):
-    by_date = {b.timestamp.date(): b for b in sym_bars}
+    # Key by full timestamp so intraday bars (many per day) align correctly.
+    by_ts = {b.timestamp: b for b in sym_bars}
     o, h, l, c, v = [], [], [], [], []
     for d in axis_dates:
-        b = by_date.get(d.date())
+        b = by_ts.get(d)
         o.append(b.open if b else None)
         h.append(b.high if b else None)
         l.append(b.low if b else None)
@@ -118,10 +123,9 @@ def _align(sym_bars: List[Bar], axis_dates: List[datetime]):
 
 
 def _align_diag(sym_bars: List[Bar], diag: Dict[str, Any], key, axis_dates, default):
-    idx = {b.timestamp.date(): i for i, b in enumerate(sym_bars)}
+    idx = {b.timestamp: i for i, b in enumerate(sym_bars)}
     arr = diag.get(key, [])
-    return [arr[idx[d.date()]] if d.date() in idx and idx[d.date()] < len(arr) else default
-            for d in axis_dates]
+    return [arr[idx[d]] if d in idx and idx[d] < len(arr) else default for d in axis_dates]
 
 
 def create_session(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -131,7 +135,8 @@ def create_session(cfg: Dict[str, Any]) -> Dict[str, Any]:
     if not tickers:
         raise ValueError("Provide at least one watchlist symbol.")
     start, end = cfg["start"], cfg["end"]
-    interval = "1d"
+    interval = cfg.get("interval", "1d")
+    annualization = bars_per_year(interval)
     capital = float(cfg.get("capital", 100000.0))
     timing = cfg.get("timing", "next_close")
     warmup = int(cfg.get("warmup_bars", 120))
@@ -148,24 +153,33 @@ def create_session(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     warnings: List[str] = []
 
-    # SPY drives the clock + is the strategy's reference; refresh it first.
-    screener_service._ensure_reference(start, end, refresh)
-    spy_path = data_service.resolve_data_path("spy_daily_yfinance.parquet")
+    # SPY drives the clock + is the strategy's reference — fetched at the chosen
+    # interval so intraday sessions align to intraday SPY bars.
+    if interval == "1d":
+        screener_service._ensure_reference(start, end, refresh)
+        spy_ref_file = "spy_daily_yfinance.parquet"
+    else:
+        spy_ref_file = f"SPY_{interval}.parquet"
+        spy_ref_path = data_service.resolve_data_path(spy_ref_file)
+        if refresh or not os.path.exists(spy_ref_path):
+            data_service.fetch_ticker("SPY", start, end, interval, merge=True, refresh=refresh)
+    spy_path = data_service.resolve_data_path(spy_ref_file)
     spy_all = DataLoader().get_bars(spy_path)
     sd, ed = datetime.fromisoformat(start).date(), datetime.fromisoformat(end).date()
     spy_bars = [b for b in spy_all if sd <= b.timestamp.date() <= ed]
     if len(spy_bars) < 3:
-        raise ValueError("Not enough SPY history for that range.")
+        raise ValueError("Not enough SPY history for that range/interval.")
     if len(spy_bars) > MAX_AXIS_BARS:
         raise ValueError(f"Range too long ({len(spy_bars)} bars); shorten it.")
     axis_dates = [b.timestamp for b in spy_bars]
 
     spy_o, spy_h, spy_l, spy_c, spy_v = _align(spy_bars, axis_dates)
-    spy_iv = _iv_from_closes(spy_c, iv_window, iv_mult, iv_override, iv_floor, iv_cap)
+    spy_iv = _iv_from_closes(spy_c, iv_window, iv_mult, iv_override, iv_floor, iv_cap, annualization)
     spy_data = SymbolData(spy_o, spy_h, spy_l, spy_c, spy_v, spy_iv,
                           [0.0] * len(axis_dates), [False] * len(axis_dates),
                           [0.0] * len(axis_dates), [False] * len(axis_dates), True)
 
+    min_bars = 100 if interval == "1d" else 60
     data: Dict[str, SymbolData] = {}
     kept: List[str] = []
     for sym in tickers:
@@ -173,12 +187,12 @@ def create_session(cfg: Dict[str, Any]) -> Dict[str, Any]:
             meta = data_service.fetch_ticker(sym, start, end, interval, merge=True, refresh=refresh)
             path = data_service.resolve_data_path(meta["name"])
             sym_bars = DataLoader().get_bars(path)
-            if len(sym_bars) < 100:
+            if len(sym_bars) < min_bars:
                 warnings.append(f"{sym}: only {len(sym_bars)} bars — skipped")
                 continue
-            diag = RSBreakoutStrategy(**params).diagnostics(sym_bars)
+            diag = RSBreakoutStrategy(spy_file=spy_ref_file, **params).diagnostics(sym_bars)
             o, h, l, c, v = _align(sym_bars, axis_dates)
-            iv = _iv_from_closes(c, iv_window, iv_mult, iv_override, iv_floor, iv_cap)
+            iv = _iv_from_closes(c, iv_window, iv_mult, iv_override, iv_floor, iv_cap, annualization)
             data[sym] = SymbolData(
                 o, h, l, c, v, iv,
                 _align_diag(sym_bars, diag, "signal", axis_dates, 0.0),
@@ -198,7 +212,8 @@ def create_session(cfg: Dict[str, Any]) -> Dict[str, Any]:
     sid = uuid.uuid4().hex[:12]
     s = PortfolioSession(
         id=sid, created_at=time.time(), capital=capital, timing=timing, risk_free_rate=r,
-        margin_policy=margin_policy, dates=axis_dates, start_index=start_index,
+        margin_policy=margin_policy, interval=interval, annualization=annualization,
+        dates=axis_dates, start_index=start_index,
         cursor=start_index, high_water=start_index, symbols=kept, data=data, spy=spy_data,
         orders=[], warnings=warnings,
     )
@@ -239,6 +254,7 @@ def _ledger(s: PortfolioSession, upto: int):
         dates=s.dates, closes=closes, opens=opens, iv=iv, orders=s.orders,
         upto_index=upto, capital=s.capital, exec_model=_exec_model(),
         timing=s.timing, risk_free_rate=s.risk_free_rate, margin_policy=s.margin_policy,
+        annualization=s.annualization,
     )
 
 
@@ -277,7 +293,7 @@ def _account(s: PortfolioSession, led, cursor: int) -> Dict[str, Any]:
             continue
         sigma = s.data[sym].iv[cursor]
         for st in structs:
-            marked = mark_structure(st, spot, cursor, s.risk_free_rate, sigma)
+            marked = mark_structure(st, spot, cursor, s.risk_free_rate, sigma, s.annualization)
             for k in net:
                 net[k] += marked["greeks"][k]
             ml = st.max_loss
@@ -452,6 +468,7 @@ def submit_order(sid: str, req: Dict[str, Any]) -> Dict[str, Any]:
             opens={k: s.data[k].o for k in s.symbols}, iv={k: s.data[k].iv for k in s.symbols},
             orders=candidate, upto_index=bar + 1, capital=s.capital, exec_model=_exec_model(),
             timing=s.timing, risk_free_rate=s.risk_free_rate, margin_policy=s.margin_policy,
+            annualization=s.annualization,
         )
         if action == "open" and led.max_risk > s.capital + 1e-6 and s.margin_policy == "defined_risk":
             raise OrderRejected(

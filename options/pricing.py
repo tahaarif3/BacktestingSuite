@@ -105,11 +105,14 @@ def bs_delta(S: float, K: float, T: float, r: float, sigma: float, kind: str, q:
     return disc_q * (_phi(d1) - 1.0)
 
 
-def bs_greeks(S: float, K: float, T: float, r: float, sigma: float, kind: str, q: float = 0.0) -> Dict[str, float]:
+def bs_greeks(S: float, K: float, T: float, r: float, sigma: float, kind: str, q: float = 0.0,
+              annualization: float = TRADING_DAYS) -> Dict[str, float]:
     """Per-share greeks.
 
-    Returns delta, gamma, theta (per trading day), vega (per 1 vol point),
-    rho (per 1% rate). Degenerate bars return delta as a step and the rest 0.
+    Returns delta, gamma, theta (per bar), vega (per 1 vol point), rho (per 1%
+    rate). ``annualization`` is bars-per-year (252 for daily); theta is scaled
+    to "per bar" by dividing the annual theta by it, so theta stays "decay per
+    bar of this timeframe". Degenerate bars return delta as a step and rest 0.
     """
     kind = _norm_kind(kind)
     if T <= T_EPS or sigma <= SIGMA_EPS or S <= 0.0 or K <= 0.0:
@@ -143,7 +146,17 @@ def bs_greeks(S: float, K: float, T: float, r: float, sigma: float, kind: str, q
     return {
         "delta": delta,
         "gamma": gamma,
-        "theta": theta_annual / TRADING_DAYS,  # per trading day
-        "vega": vega_annual / 100.0,           # per 1 vol point
-        "rho": rho_annual / 100.0,             # per 1% rate
+        "theta": theta_annual / annualization,  # per bar of the timeframe
+        "vega": vega_annual / 100.0,             # per 1 vol point
+        "rho": rho_annual / 100.0,               # per 1% rate
     }
+
+
+# Regular-session bars per year by interval (bars/day × 252). Used to convert
+# DTE-in-bars to years and to scale theta / realized-vol for non-daily bars.
+_BARS_PER_DAY = {"1d": 1.0, "1h": 7.0, "60m": 7.0, "30m": 13.0, "15m": 26.0, "5m": 78.0,
+                 "1wk": 1.0 / 5.0, "1mo": 1.0 / 21.0}
+
+
+def bars_per_year(interval: str) -> float:
+    return _BARS_PER_DAY.get(interval, 1.0) * TRADING_DAYS

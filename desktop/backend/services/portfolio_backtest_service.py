@@ -24,20 +24,28 @@ def _clean(path: str) -> pd.DataFrame:
 
 
 def _load(cfg: PortfolioBacktestConfig):
-    screener_service._ensure_reference(cfg.start, cfg.end, cfg.refresh)
-    spy = _clean(data_service.resolve_data_path("spy_daily_yfinance.parquet")).loc[cfg.start:cfg.end]
+    interval = cfg.interval
+    if interval == "1d":
+        screener_service._ensure_reference(cfg.start, cfg.end, cfg.refresh)
+        spy_file = "spy_daily_yfinance.parquet"
+    else:
+        spy_file = f"SPY_{interval}.parquet"
+        if cfg.refresh or not os.path.exists(data_service.resolve_data_path(spy_file)):
+            data_service.fetch_ticker("SPY", cfg.start, cfg.end, interval, merge=True, refresh=cfg.refresh)
+    spy = _clean(data_service.resolve_data_path(spy_file)).loc[cfg.start:cfg.end]
 
     tickers = [t.strip().upper() for t in (cfg.tickers or screener_service.DEFAULT_WATCHLIST) if t.strip()]
     tickers = list(dict.fromkeys(tickers))
     data: Dict[str, pd.DataFrame] = {}
     warnings: List[str] = []
+    min_bars = cfg.trend_slow_ma + 5
     for sym in tickers:
         try:
-            path = data_service.resolve_data_path(f"{sym}_1d.parquet")
+            path = data_service.resolve_data_path(f"{sym}_{interval}.parquet")
             if cfg.refresh or not os.path.exists(path):
-                data_service.fetch_ticker(sym, cfg.start, cfg.end, "1d", merge=True, refresh=cfg.refresh)
+                data_service.fetch_ticker(sym, cfg.start, cfg.end, interval, merge=True, refresh=cfg.refresh)
             df = _clean(path).loc[cfg.start:cfg.end]
-            if len(df) < cfg.trend_slow_ma + 5:
+            if len(df) < min_bars:
                 warnings.append(f"{sym}: only {len(df)} bars — skipped")
                 continue
             data[sym] = df

@@ -91,13 +91,15 @@ def build_structure(
     r: float,
     open_index: int,
     structure_id: str,
+    annualization: float = TRADING_DAYS,
 ) -> OptionStructure:
     """Build a concrete, priced structure. ``S`` is the spot (fill price),
-    ``sigma`` the IV for this bar, ``r`` the risk-free rate."""
+    ``sigma`` the IV for this bar, ``r`` the risk-free rate. ``annualization``
+    is bars-per-year, so ``dte_bars`` is interpreted in bars of the timeframe."""
     st = spec.structure_type
     if st not in STRUCTURE_TYPES:
         raise ValueError(f"Unknown structure type: {st}")
-    T = max(spec.dte_bars, 0) / TRADING_DAYS
+    T = max(spec.dte_bars, 0) / annualization
     expiry_index = open_index + max(spec.dte_bars, 0)
     n = max(int(spec.contracts), 1)
     grid = spec.grid
