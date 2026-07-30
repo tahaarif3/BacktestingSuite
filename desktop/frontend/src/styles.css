@@ -533,3 +533,8 @@ tr:hover td { background: var(--bg-elev); }
 .chart-row { display: flex; gap: 10px; align-items: stretch; }
 .chart-col { flex: 1 1 0; min-width: 0; }
 .chart-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; padding-left: 4px; }
+
+/* --- Sub-tab row (strategy views) --- */
+.tabs.subtabs { background: var(--bg-elev); }
+.tabs.subtabs .tab { font-size: 13px; padding: 7px 14px; }
+.tabs.subtabs .tab.active { color: var(--primary); }

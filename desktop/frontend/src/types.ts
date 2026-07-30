@@ -587,6 +587,51 @@ export interface OptionsBacktestResult {
   final_equity: number;
 }
 
+// --- SPY DCA / bankroll ------------------------------------------------------
+
+export interface DcaScheme {
+  label: string;
+  amount: number;
+  cadence: string;      // weekly|biweekly|semimonthly|monthly|quarterly
+  buy_rule: string;     // always|above_ma|below_ma
+  ma_type: string;      // sma|ema
+  ma_period: number;
+  unused_cash: string;  // accumulate|skip
+  cash_yield_annual: number;
+  sell_rule: string;    // none|above_ma|below_ma
+  sell_fraction: number;
+}
+
+export interface DcaLogEntry {
+  date: string;
+  action: string;
+  price: number;
+  cash: number;
+  shares: number;
+  shares_after: number;
+  value: number;
+}
+
+export interface DcaResult {
+  label: string;
+  dates: string[];
+  value: number[];
+  contributed: number[];
+  invested_frac: number[];
+  summary: Record<string, number>;
+  buys: number;
+  sells: number;
+  log: DcaLogEntry[];
+  error?: string;
+}
+
+export interface DcaResponse {
+  symbol: string;
+  results: DcaResult[];
+  baseline: DcaResult;
+  lump_sum: DcaResult;
+}
+
 // --- Automated portfolio backtest -------------------------------------------
 
 export interface PBTTrade {
