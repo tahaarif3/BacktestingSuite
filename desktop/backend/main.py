@@ -26,6 +26,7 @@ from desktop.backend.schemas import (
     ReplayOrderRequest,
     RewindRequest,
     CreatePortfolioRequest,
+    PortfolioBacktestRequest,
     PortfolioOrderRequest,
     RobustnessRequest,
     SaveStrategyRequest,
@@ -37,6 +38,7 @@ from desktop.backend.services import (
     backtest_service,
     data_service,
     market_meta,
+    portfolio_backtest_service,
     portfolio_service,
     replay_service,
     robustness_service,
@@ -184,6 +186,23 @@ def get_data_search(q: str, limit: int = 10):
         return {"results": market_meta.search_tickers(q, limit)}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# --- Automated portfolio backtest -------------------------------------------
+
+
+@app.post("/api/portfolio-backtest/run")
+def post_portfolio_backtest(req: PortfolioBacktestRequest):
+    try:
+        cfg = dict(req.config)
+        cfg.setdefault("start", req.start)
+        cfg.setdefault("end", req.end)
+        if req.tickers is not None:
+            cfg["tickers"] = req.tickers
+        cfg["sensitivity"] = req.sensitivity
+        return portfolio_backtest_service.run(cfg)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # --- Screener ---------------------------------------------------------------

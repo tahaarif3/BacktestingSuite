@@ -2,7 +2,12 @@ import pytest
 import pandas as pd
 from datetime import datetime
 from domain.models import Bar
-from backtest.position_sizing import FixedSharesSizer, FixedFractionalSizer, VolatilityBasedSizer
+from backtest.position_sizing import (
+    ATRPercentRiskSizer,
+    FixedSharesSizer,
+    FixedFractionalSizer,
+    VolatilityBasedSizer,
+)
 from backtest.execution import ExecutionModel
 from backtest.portfolio import Portfolio
 
@@ -32,6 +37,40 @@ def test_volatility_based_sizer_single():
     # Expected ATR estimate is close to 10.0.
     # Risk per share = 10.0. Shares = 1000 / 10 = 100.
     assert pytest.approx(shares, abs=5.0) == 100.0
+
+
+def test_atr_percent_risk_sizer_latches_entry_size():
+    sizer = ATRPercentRiskSizer(
+        risk_fraction=0.005, window=14, stop_multiple=2.0
+    )
+    start = pd.Timestamp("2020-01-01")
+    for i in range(15):
+        bar = Bar(
+            start + pd.Timedelta(days=i),
+            100.0,
+            105.0,
+            95.0,
+            100.0,
+            1000,
+        )
+        signal = 1.0 if i == 14 else 0.0
+        shares = sizer.size_position(
+            signal, 100.0, 100000.0, bar
+        )
+
+    # $500 risk / ($10 ATR * 2) = 25 shares.
+    assert shares == pytest.approx(25.0)
+    next_bar = Bar(
+        start + pd.Timedelta(days=15),
+        100.0,
+        120.0,
+        80.0,
+        100.0,
+        1000,
+    )
+    assert sizer.size_position(
+        1.0, 100.0, 100000.0, next_bar
+    ) == pytest.approx(25.0)
 
 def test_execution_model_costs():
     # 1% slippage, $0.1 absolute slippage
