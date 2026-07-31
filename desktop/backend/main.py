@@ -28,6 +28,7 @@ from desktop.backend.schemas import (
     CreatePortfolioRequest,
     DcaRequest,
     PortfolioBacktestRequest,
+    TimingRequest,
     PortfolioOrderRequest,
     RobustnessRequest,
     SaveStrategyRequest,
@@ -46,6 +47,7 @@ from desktop.backend.services import (
     robustness_service,
     screener_service,
     strategy_editor_service,
+    timing_service,
 )
 
 from strategy_registry import list_strategies, list_sizers
@@ -197,6 +199,14 @@ def get_data_search(q: str, limit: int = 10):
 def post_dca_run(req: DcaRequest):
     try:
         return dca_service.run(req.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/timing/run")
+def post_timing_run(req: TimingRequest):
+    try:
+        return timing_service.run(req.model_dump())
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -12,7 +12,7 @@ REPO_ROOT = os.path.abspath(os.getcwd())
 
 hiddenimports = []
 for pkg in ["data", "backtest", "analytics", "validation", "domain", "presentation", "options",
-            "portfolio_backtest", "dca"]:
+            "portfolio_backtest", "dca", "timing"]:
     hiddenimports += collect_submodules(pkg)
 
 # strat/ is deliberately NOT swept with collect_submodules: it may contain
