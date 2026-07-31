@@ -211,6 +211,45 @@ class DcaScheme(BaseModel):
     dip_lookback: int = 60
 
 
+class TimingStrategy(BaseModel):
+    label: str = "Strategy"
+    strategy: str = "buy_hold"           # buy_hold|ma|golden_cross|momentum|vol_target|vol_derisk|seasonal|dip
+    ma_type: str = "sma"
+    ma_period: int = 200
+    signal_freq: str = "daily"           # daily|monthly
+    band_pct: float = 0.0
+    fast_period: int = 50
+    slow_period: int = 200
+    mom_lookback: int = 252
+    require_ma: bool = False
+    vol_window: int = 20
+    vol_target: float = 0.15
+    vol_cap: float = 1.0
+    vol_thr: float = 0.20
+    derisk_exposure: float = 0.5
+    season_out_start: int = 5
+    season_out_end: int = 10
+    season_require_ma: bool = False
+    dip_lookback: int = 60
+    dip_threshold: float = 0.10
+    dip_base_exposure: float = 0.80
+    exposure_in: float = 1.0
+    exposure_out: float = 0.0
+    cost_pct: float = 0.0005
+    cash_yield_annual: float = 0.045
+    borrow_annual: float = 0.055
+    rebalance_band: float = 0.03
+
+
+class TimingRequest(BaseModel):
+    symbol: str = "SPY"
+    start: str = "2004-01-01"
+    end: str = "2026-12-31"
+    refresh: bool = False
+    start_capital: float = 10000.0
+    strategies: List[TimingStrategy] = Field(default_factory=list)
+
+
 class DcaRequest(BaseModel):
     symbol: str = "SPY"
     start: str = "2010-01-01"

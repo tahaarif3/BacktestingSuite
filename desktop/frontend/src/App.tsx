@@ -20,6 +20,7 @@ import PortfolioPanel from "./components/portfolio/PortfolioPanel";
 import ScannerPanel from "./components/ScannerPanel";
 import PortfolioBacktestPanel from "./components/PortfolioBacktestPanel";
 import SpyDcaPanel from "./components/SpyDcaPanel";
+import SpyTimingPanel from "./components/SpyTimingPanel";
 import UpdateBanner from "./components/UpdateBanner";
 
 const DEFAULT_CONFIG: BacktestConfig = {
@@ -39,7 +40,7 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 const ALL_TESTS = ["train_test", "walk_forward", "monte_carlo", "cost_sensitivity"];
-type Tab = "results" | "robustness" | "compare" | "scanner" | "pbacktest" | "replay" | "portfolio" | "dca" | "editor";
+type Tab = "results" | "robustness" | "compare" | "scanner" | "pbacktest" | "replay" | "portfolio" | "dca" | "timing" | "editor";
 type Group = "rsbreakout" | "dca" | "misc";
 const RS_VIEWS: { id: Tab; label: string }[] = [
   { id: "results", label: "Backtest" },
@@ -49,6 +50,10 @@ const RS_VIEWS: { id: Tab; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
   { id: "robustness", label: "Robustness" },
   { id: "compare", label: "Compare" },
+];
+const DCA_VIEWS: { id: Tab; label: string }[] = [
+  { id: "dca", label: "Contributions" },
+  { id: "timing", label: "Timing" },
 ];
 
 export default function App() {
@@ -79,7 +84,7 @@ export default function App() {
 
   const goGroup = (g: Group) => {
     setGroup(g);
-    if (g === "dca") goTab("dca");
+    if (g === "dca" && !DCA_VIEWS.some((v) => v.id === tab)) goTab("dca");
     else if (g === "misc") goTab("editor");
     else if (!RS_VIEWS.some((v) => v.id === tab)) goTab("results");
   };
@@ -263,6 +268,16 @@ export default function App() {
           </div>
         )}
 
+        {group === "dca" && (
+          <div className="tabs subtabs">
+            {DCA_VIEWS.map((v) => (
+              <div key={v.id} className={`tab ${tab === v.id ? "active" : ""}`} onClick={() => goTab(v.id)}>
+                {v.label}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className={`content ${fullTab ? "content--flush" : ""}`}>
           <UpdateBanner />
           {error && <div className="error">{error}</div>}
@@ -275,6 +290,7 @@ export default function App() {
           {tab === "scanner" && <ScannerPanel onBacktest={onScanBacktest} onReplay={onScanReplay} />}
           {tab === "pbacktest" && <PortfolioBacktestPanel />}
           {tab === "dca" && <SpyDcaPanel />}
+          {tab === "timing" && <SpyTimingPanel />}
           {replayVisited && (
             <div style={{ display: tab === "replay" ? "block" : "none", height: "100%" }}>
               <ReplayPanel

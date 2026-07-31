@@ -9,6 +9,8 @@ import type {
   OptionPreview,
   DcaResponse,
   DcaScheme,
+  TimingResponse,
+  TimingStrategy,
   OptionsBacktestResult,
   OptionStructureMeta,
   PortfolioBacktestResult,
@@ -211,6 +213,10 @@ export const api = {
   // --- SPY DCA / bankroll ---
   runDca: (body: { symbol: string; start: string; end: string; refresh: boolean; schemes: DcaScheme[] }) =>
     post<DcaResponse>("/api/dca/run", body),
+
+  // --- SPY timing ---
+  runTiming: (body: { symbol: string; start: string; end: string; refresh: boolean; start_capital: number; strategies: TimingStrategy[] }) =>
+    post<TimingResponse>("/api/timing/run", body),
 
   // --- Automated portfolio backtest ---
   runPortfolioBacktest: (body: {

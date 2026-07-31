@@ -636,6 +636,64 @@ export interface DcaResponse {
   lump_sum: DcaResult;
 }
 
+// --- SPY timing (buy & sell exposure) ---------------------------------------
+
+export interface TimingStrategy {
+  label: string;
+  strategy: string;      // buy_hold|ma|golden_cross|momentum|vol_target|vol_derisk|seasonal|dip
+  ma_type: string;
+  ma_period: number;
+  signal_freq: string;   // daily|monthly
+  band_pct: number;
+  fast_period: number;
+  slow_period: number;
+  mom_lookback: number;
+  require_ma: boolean;
+  vol_window: number;
+  vol_target: number;
+  vol_cap: number;
+  vol_thr: number;
+  derisk_exposure: number;
+  season_out_start: number;
+  season_out_end: number;
+  season_require_ma: boolean;
+  dip_lookback: number;
+  dip_threshold: number;
+  dip_base_exposure: number;
+  exposure_in: number;
+  exposure_out: number;
+  cost_pct: number;
+  cash_yield_annual: number;
+  borrow_annual: number;
+  rebalance_band: number;
+}
+
+export interface TimingLogEntry {
+  date: string;
+  action: string;
+  price: number;
+  from_exposure: number;
+  to_exposure: number;
+  trade: number;
+  value: number;
+}
+
+export interface TimingResult {
+  label: string;
+  dates: string[];
+  value: number[];
+  exposure: number[];
+  summary: Record<string, number>;
+  log: TimingLogEntry[];
+  error?: string;
+}
+
+export interface TimingResponse {
+  symbol: string;
+  results: TimingResult[];
+  baseline: TimingResult;
+}
+
 // --- Automated portfolio backtest -------------------------------------------
 
 export interface PBTTrade {
