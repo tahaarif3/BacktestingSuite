@@ -197,7 +197,8 @@ class TickerValidateRequest(BaseModel):
 class DcaScheme(BaseModel):
     label: str = "Scheme"
     amount: float = 100.0
-    cadence: str = "monthly"              # weekly|biweekly|semimonthly|monthly|quarterly
+    cadence: str = "monthly"              # weekly|biweekly|semimonthly|monthly|quarterly|annual
+    contribution_day: str = "start"      # start|mid|end|lowest
     buy_rule: str = "always"             # always|above_ma|below_ma
     ma_type: str = "sma"                 # sma|ema
     ma_period: int = 200
@@ -205,6 +206,9 @@ class DcaScheme(BaseModel):
     cash_yield_annual: float = 0.0
     sell_rule: str = "none"              # none|above_ma|below_ma
     sell_fraction: float = 1.0
+    reserve_frac: float = 0.0
+    dip_threshold: float = 0.10
+    dip_lookback: int = 60
 
 
 class DcaRequest(BaseModel):

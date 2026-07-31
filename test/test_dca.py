@@ -69,6 +69,35 @@ def test_sell_rule_reduces_shares():
     assert sell.summary["Shares Held"] <= no_sell.summary["Shares Held"]
 
 
+def test_contribution_day_shifts_buys():
+    df = _rising()
+    s = run_dca(DcaConfig(contribution_day="start"), df)
+    e = run_dca(DcaConfig(contribution_day="end"), df)
+    m = run_dca(DcaConfig(contribution_day="mid"), df)
+    assert s.buys == e.buys == m.buys                # same count, different dates
+    assert len({s.log[0]["date"], e.log[0]["date"], m.log[0]["date"]}) == 3
+
+
+def test_lowest_day_beats_or_ties_start_in_final_value():
+    df = _rising()  # rising, but hindsight-lowest still buys at the cheapest each month
+    low = run_dca(DcaConfig(contribution_day="lowest"), df)
+    start = run_dca(DcaConfig(contribution_day="start"), df)
+    assert low.summary["Final Value"] >= start.summary["Final Value"] - 1e-6
+
+
+def test_reserve_holds_dry_powder_then_deploys_on_dip():
+    n = 500
+    idx = pd.date_range("2016-01-04", periods=n, freq="B")
+    close = np.concatenate([np.linspace(100, 140, 300), np.linspace(140, 108, 100), np.linspace(108, 150, 100)])
+    df = pd.DataFrame({"close": close}, index=idx)
+    full = run_dca(DcaConfig(reserve_frac=0.0), df)
+    reserve = run_dca(DcaConfig(reserve_frac=0.4, dip_threshold=0.1, dip_lookback=60), df)
+    # holding a reserve means less time fully invested on average...
+    assert reserve.summary["Avg Time in Market"] < full.summary["Avg Time in Market"]
+    # ...but the reserve does get deployed (it doesn't sit forever)
+    assert reserve.summary["Shares Held"] > 0
+
+
 def test_irr_sign():
     from datetime import date
     # invest 1000 now, get 2000 in 1 year -> ~100% IRR

@@ -592,7 +592,8 @@ export interface OptionsBacktestResult {
 export interface DcaScheme {
   label: string;
   amount: number;
-  cadence: string;      // weekly|biweekly|semimonthly|monthly|quarterly
+  cadence: string;      // weekly|biweekly|semimonthly|monthly|quarterly|annual
+  contribution_day: string; // start|mid|end|lowest
   buy_rule: string;     // always|above_ma|below_ma
   ma_type: string;      // sma|ema
   ma_period: number;
@@ -600,6 +601,9 @@ export interface DcaScheme {
   cash_yield_annual: number;
   sell_rule: string;    // none|above_ma|below_ma
   sell_fraction: number;
+  reserve_frac: number;
+  dip_threshold: number;
+  dip_lookback: number;
 }
 
 export interface DcaLogEntry {

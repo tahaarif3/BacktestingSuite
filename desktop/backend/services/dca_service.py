@@ -14,8 +14,9 @@ from desktop.backend.services import data_service, screener_service
 from data.dataloader import DataLoader
 from dca.engine import DcaConfig, run_dca, annualized_irr, _max_drawdown
 
-_FIELDS = {"label", "amount", "cadence", "buy_rule", "ma_type", "ma_period",
-           "unused_cash", "cash_yield_annual", "sell_rule", "sell_fraction"}
+_FIELDS = {"label", "amount", "cadence", "contribution_day", "buy_rule", "ma_type", "ma_period",
+           "unused_cash", "cash_yield_annual", "sell_rule", "sell_fraction",
+           "reserve_frac", "dip_threshold", "dip_lookback"}
 
 
 def _clean_num(x) -> float:

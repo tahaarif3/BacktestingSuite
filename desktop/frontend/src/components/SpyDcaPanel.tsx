@@ -5,13 +5,23 @@ import { usd, pct, dec } from "../format";
 import Plot, { PALETTE } from "./Plot";
 
 const PRESETS_KEY = "bt.dca.presets";
-const CADENCES = ["weekly", "biweekly", "semimonthly", "monthly", "quarterly"];
+const CADENCES = ["weekly", "biweekly", "semimonthly", "monthly", "quarterly", "annual"];
+const CONTRIB_DAYS = ["start", "mid", "end", "lowest"];
 
+const BASE: DcaScheme = {
+  label: "", amount: 100, cadence: "monthly", contribution_day: "start", buy_rule: "always",
+  ma_type: "sma", ma_period: 200, unused_cash: "accumulate", cash_yield_annual: 0,
+  sell_rule: "none", sell_fraction: 1, reserve_frac: 0, dip_threshold: 0.1, dip_lookback: 60,
+};
+const mk = (o: Partial<DcaScheme>): DcaScheme => ({ ...BASE, ...o });
+
+// Defaults reflect the study winners: the best "free" risk cut (D5) and a couple
+// of the levers worth exploring. All are compared to the $100/mo baseline.
 const DEFAULT_SCHEMES: DcaScheme[] = [
-  { label: "$300 / quarter", amount: 300, cadence: "quarterly", buy_rule: "always", ma_type: "sma", ma_period: 200, unused_cash: "accumulate", cash_yield_annual: 0, sell_rule: "none", sell_fraction: 1 },
-  { label: "Only buy above 200-SMA", amount: 100, cadence: "monthly", buy_rule: "above_ma", ma_type: "sma", ma_period: 200, unused_cash: "accumulate", cash_yield_annual: 0, sell_rule: "none", sell_fraction: 1 },
-  { label: "Buy dips below 200-SMA", amount: 100, cadence: "monthly", buy_rule: "below_ma", ma_type: "sma", ma_period: 200, unused_cash: "accumulate", cash_yield_annual: 0, sell_rule: "none", sell_fraction: 1 },
-  { label: "De-risk below 200-SMA", amount: 100, cadence: "monthly", buy_rule: "always", ma_type: "sma", ma_period: 200, unused_cash: "accumulate", cash_yield_annual: 0.04, sell_rule: "below_ma", sell_fraction: 1 },
+  mk({ label: "$100/mo · end of month", contribution_day: "end" }),
+  mk({ label: "Only >200-SMA + 4.5% cash yield", buy_rule: "above_ma", ma_period: 200, cash_yield_annual: 0.045 }),
+  mk({ label: "Value-avg: 30% dip reserve", reserve_frac: 0.3, dip_threshold: 0.1, dip_lookback: 60, cash_yield_annual: 0.045 }),
+  mk({ label: "Trend system: in >200 / out <200", buy_rule: "above_ma", sell_rule: "below_ma", ma_period: 200, sell_fraction: 1, cash_yield_annual: 0.045 }),
 ];
 
 const SUMMARY_ORDER = ["Final Value", "Total Contributed", "Profit", "ROI on Contributions",
@@ -86,6 +96,11 @@ export default function SpyDcaPanel() {
                   {CADENCES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
+              <div className="field"><label>Buy on</label>
+                <select value={s.contribution_day} onChange={(e) => setScheme(i, { contribution_day: e.target.value })}>
+                  {CONTRIB_DAYS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
             </div>
             <div className="row">
               <div className="field"><label>Buy rule</label>
@@ -117,6 +132,11 @@ export default function SpyDcaPanel() {
               </div>
               <div className="field"><label>Sell fraction</label><input type="number" step="0.1" min="0" max="1" value={s.sell_fraction} onChange={(e) => setScheme(i, { sell_fraction: +e.target.value || 0 })} /></div>
               <div className="field"><label>Cash yield %/yr</label><input type="number" step="0.01" value={s.cash_yield_annual} onChange={(e) => setScheme(i, { cash_yield_annual: +e.target.value || 0 })} /></div>
+            </div>
+            <div className="row">
+              <div className="field"><label>Dip reserve (frac)</label><input type="number" step="0.05" min="0" max="0.9" value={s.reserve_frac} onChange={(e) => setScheme(i, { reserve_frac: +e.target.value || 0 })} title="Hold back this fraction of contributions; deploy it on dips" /></div>
+              <div className="field"><label>Dip threshold</label><input type="number" step="0.02" value={s.dip_threshold} onChange={(e) => setScheme(i, { dip_threshold: +e.target.value || 0 })} title="'Dip' = price this far below its recent high" /></div>
+              <div className="field"><label>Dip lookback</label><input type="number" value={s.dip_lookback} onChange={(e) => setScheme(i, { dip_lookback: +e.target.value || 1 })} /></div>
               <div className="field" style={{ display: "flex", alignItems: "flex-end" }}>
                 <button className="btn-inline" onClick={() => removeScheme(i)}>Remove</button>
               </div>
