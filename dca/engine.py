@@ -28,13 +28,20 @@ class DcaConfig:
     label: str = "Scheme"
     amount: float = 100.0                 # cash added per contribution
     cadence: str = "monthly"              # weekly|biweekly|semimonthly|monthly|quarterly
+    contribution_day: str = "start"       # start|mid|end|lowest (day within each period)
     buy_rule: str = "always"              # always|above_ma|below_ma
     ma_type: str = "sma"                  # sma|ema
     ma_period: int = 200
     unused_cash: str = "accumulate"       # accumulate|skip
-    cash_yield_annual: float = 0.0        # yield on idle cash (e.g. 0.04)
+    cash_yield_annual: float = 0.0        # yield on idle cash (e.g. 0.045 = T-bills)
     sell_rule: str = "none"               # none|above_ma|below_ma
     sell_fraction: float = 1.0            # fraction of shares sold when sell triggers
+    # Value-averaging / dip reserve: hold back this fraction of contributions as
+    # dry powder, then dump the whole reserve when price is `dip_threshold` below
+    # its `dip_lookback`-day high. reserve_frac=0 -> deploy everything (plain DCA).
+    reserve_frac: float = 0.0
+    dip_threshold: float = 0.10
+    dip_lookback: int = 60
 
 
 @dataclass
@@ -56,26 +63,41 @@ def _ma(close: pd.Series, kind: str, period: int) -> pd.Series:
     return close.rolling(period).mean()
 
 
-def _contribution_flags(index: pd.DatetimeIndex, cadence: str) -> np.ndarray:
-    """True on the first trading day of each contribution period."""
-    d = pd.DatetimeIndex(index)
-    flags = np.zeros(len(d), dtype=bool)
+def _period_key(d: pd.DatetimeIndex, cadence: str) -> np.ndarray:
     if cadence == "weekly":
-        key = d.isocalendar().week.to_numpy() + d.isocalendar().year.to_numpy() * 100
-    elif cadence == "biweekly":
+        return d.isocalendar().week.to_numpy() + d.isocalendar().year.to_numpy() * 100
+    if cadence == "biweekly":
         wk = d.isocalendar().week.to_numpy() + d.isocalendar().year.to_numpy() * 100
-        # every other ISO week
-        key = np.where((d.isocalendar().week.to_numpy() % 2) == 0, wk, wk - 1)
-    elif cadence == "semimonthly":
-        key = d.year.to_numpy() * 10000 + d.month.to_numpy() * 100 + (d.day.to_numpy() > 15).astype(int)
-    elif cadence == "quarterly":
-        key = d.year.to_numpy() * 10 + ((d.month.to_numpy() - 1) // 3)
-    else:  # monthly
-        key = d.year.to_numpy() * 100 + d.month.to_numpy()
-    prev = np.empty_like(key)
-    prev[0] = key[0] - 1  # force first day to be a contribution
-    prev[1:] = key[:-1]
-    return key != prev
+        return np.where((d.isocalendar().week.to_numpy() % 2) == 0, wk, wk - 1)
+    if cadence == "semimonthly":
+        return d.year.to_numpy() * 10000 + d.month.to_numpy() * 100 + (d.day.to_numpy() > 15).astype(int)
+    if cadence == "quarterly":
+        return d.year.to_numpy() * 10 + ((d.month.to_numpy() - 1) // 3)
+    if cadence == "annual":
+        return d.year.to_numpy()
+    return d.year.to_numpy() * 100 + d.month.to_numpy()  # monthly
+
+
+def _contribution_flags(index: pd.DatetimeIndex, cadence: str,
+                        day: str = "start", closes: np.ndarray = None) -> np.ndarray:
+    """One True per contribution period, on the chosen day within it:
+    start / mid / end trading day, or the period's lowest-close day (hindsight)."""
+    d = pd.DatetimeIndex(index)
+    key = _period_key(d, cadence)
+    flags = np.zeros(len(d), dtype=bool)
+    frame = pd.DataFrame({"key": key, "i": np.arange(len(key))})
+    for _, grp in frame.groupby("key", sort=False):
+        idxs = grp["i"].to_numpy()
+        if day == "end":
+            sel = idxs[-1]
+        elif day == "mid":
+            sel = idxs[len(idxs) // 2]
+        elif day == "lowest" and closes is not None:
+            sel = idxs[int(np.argmin(closes[idxs]))]
+        else:
+            sel = idxs[0]
+        flags[sel] = True
+    return flags
 
 
 def annualized_irr(flows: List[Tuple[date, float]]) -> float:
@@ -125,7 +147,8 @@ def run_dca(cfg: DcaConfig, prices: pd.DataFrame) -> DcaResult:
 
     ma = _ma(close, cfg.ma_type, cfg.ma_period).to_numpy()
     px = close.to_numpy()
-    contrib_day = _contribution_flags(idx, cfg.cadence)
+    roll_high = close.rolling(cfg.dip_lookback, min_periods=1).max().to_numpy()
+    contrib_day = _contribution_flags(idx, cfg.cadence, cfg.contribution_day, px)
     daily_yield = cfg.cash_yield_annual / TRADING_DAYS
 
     cash = 0.0
@@ -157,16 +180,24 @@ def run_dca(cfg: DcaConfig, prices: pd.DataFrame) -> DcaResult:
                 contributed += cfg.amount
                 flows.append((idx[t].date(), -cfg.amount))
 
-        # 2) deploy cash when the buy rule allows
+        # 2) deploy cash when the buy rule allows.
+        #    With a reserve, keep reserve_frac of contributions as dry powder and
+        #    dump the whole reserve when price is in a dip below its rolling high.
         if buy_ok and cash > 0 and px[t] > 0:
-            deployed = cash
-            bought = cash / px[t]
-            shares += bought
-            cash = 0.0
-            buys += 1
-            log.append({"date": idx[t].strftime("%Y-%m-%d"), "action": "buy", "price": float(px[t]),
-                        "cash": float(deployed), "shares": float(bought),
-                        "shares_after": float(shares), "value": float(shares * px[t])})
+            in_dip = (cfg.reserve_frac > 0 and not np.isnan(roll_high[t])
+                      and px[t] < (1.0 - cfg.dip_threshold) * roll_high[t])
+            if cfg.reserve_frac <= 0 or in_dip:
+                deployed = cash
+            else:
+                deployed = max(0.0, cash - cfg.reserve_frac * contributed)
+            if deployed > 0:
+                bought = deployed / px[t]
+                shares += bought
+                cash -= deployed
+                buys += 1
+                log.append({"date": idx[t].strftime("%Y-%m-%d"), "action": "buy", "price": float(px[t]),
+                            "cash": float(deployed), "shares": float(bought),
+                            "shares_after": float(shares), "value": float(cash + shares * px[t])})
 
         # 3) sell overlay
         sell_ok = ((cfg.sell_rule == "above_ma" and uptrend)
