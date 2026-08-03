@@ -11,7 +11,8 @@ data through t and executes at t's close.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from datetime import date
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -57,6 +58,15 @@ class TimingConfig:
     cash_yield_annual: float = 0.045
     borrow_annual: float = 0.055
     rebalance_band: float = 0.03
+    # Optional recurring contributions.  A zero amount preserves the original
+    # lump-sum timing study.  Contribution days use the same schedule semantics
+    # as the DCA engine and force a rebalance so new cash is actually allocated.
+    contribution_amount: float = 0.0
+    contribution_cadence: str = "weekly"
+    contribution_day: str = "start"
+    contribution_buy_rule: str = "always"  # always|above_ma|below_ma
+    contribution_ma_type: str = "sma"
+    contribution_ma_period: int = 100
 
 
 @dataclass
@@ -155,12 +165,32 @@ def target_exposure(cfg: TimingConfig, close: pd.Series) -> np.ndarray:
 
 
 def _simulate(cfg: TimingConfig, px: np.ndarray, idx, exposure: np.ndarray):
+    # Importing these small helpers here keeps the exposure engine independent
+    # for ordinary lump-sum runs while guaranteeing that weekly/monthly dates
+    # match the existing DCA reports exactly.
+    from dca.engine import _contribution_flags
+
     n = len(px)
     cash = cfg.start_capital
+    reserved_cash = 0.0
     shares = 0.0
     vals = np.zeros(n)
     exp_curve = np.zeros(n)
     turnover = 0.0
+    contributed = max(0.0, float(cfg.start_capital))
+    contributed_curve = np.zeros(n)
+    flows: List[Tuple[date, float]] = []
+    if contributed > 0 and n:
+        flows.append((idx[0].date(), -contributed))
+    contribution_flags = (
+        _contribution_flags(idx, cfg.contribution_cadence, cfg.contribution_day, px)
+        if cfg.contribution_amount > 0 else np.zeros(n, dtype=bool)
+    )
+    gate_ma = _ma(
+        pd.Series(px, index=idx),
+        cfg.contribution_ma_type,
+        cfg.contribution_ma_period,
+    )
     log: List[Dict[str, Any]] = []
     first = True
     for t in range(n):
@@ -168,27 +198,57 @@ def _simulate(cfg: TimingConfig, px: np.ndarray, idx, exposure: np.ndarray):
             cash *= (1 + cfg.cash_yield_annual / TRADING_DAYS)
         elif cash < 0:
             cash *= (1 + cfg.borrow_annual / TRADING_DAYS)
-        value = cash + shares * px[t]
-        cur = (shares * px[t]) / value if value > 0 else 0.0
+        if reserved_cash > 0:
+            reserved_cash *= (1 + cfg.cash_yield_annual / TRADING_DAYS)
+
+        gate_up = not np.isnan(gate_ma[t]) and px[t] > gate_ma[t]
+        gate_down = not np.isnan(gate_ma[t]) and px[t] < gate_ma[t]
+        gate_open = (
+            cfg.contribution_buy_rule == "always"
+            or (cfg.contribution_buy_rule == "above_ma" and gate_up)
+            or (cfg.contribution_buy_rule == "below_ma" and gate_down)
+        )
+
+        deposited = 0.0
+        if contribution_flags[t]:
+            deposited = float(cfg.contribution_amount)
+            if gate_open:
+                cash += deposited
+            else:
+                reserved_cash += deposited
+            contributed += deposited
+            flows.append((idx[t].date(), -deposited))
+
+        released = 0.0
+        if gate_open and reserved_cash > 0:
+            released = reserved_cash
+            cash += released
+            reserved_cash = 0.0
+
+        active_value = cash + shares * px[t]
+        value = active_value + reserved_cash
+        cur = (shares * px[t]) / active_value if active_value > 0 else 0.0
         tgt = max(0.0, exposure[t])
-        if first or abs(cur - tgt) > cfg.rebalance_band:
-            tgt_dollars = tgt * value
+        force_for_contribution = (deposited > 0 and gate_open) or released > 0
+        if (first and active_value > 0) or force_for_contribution or abs(cur - tgt) > cfg.rebalance_band:
+            tgt_dollars = tgt * active_value
             trade = tgt_dollars - shares * px[t]
             cost_paid = abs(trade) * cfg.cost_pct
             shares = tgt_dollars / px[t] if px[t] > 0 else 0.0
-            cash = value - tgt_dollars - cost_paid
+            cash = active_value - tgt_dollars - cost_paid
             turnover += abs(trade)
             if not first and abs(trade) > 1e-6:
                 log.append({"date": idx[t].strftime("%Y-%m-%d"),
                             "action": "increase" if trade > 0 else "reduce",
                             "price": float(px[t]), "from_exposure": float(cur),
                             "to_exposure": float(tgt), "trade": float(trade),
-                            "value": float(cash + shares * px[t])})
+                            "value": float(cash + reserved_cash + shares * px[t])})
             first = False
-        v = cash + shares * px[t]
+        v = cash + reserved_cash + shares * px[t]
         vals[t] = v
+        contributed_curve[t] = contributed
         exp_curve[t] = (shares * px[t]) / v if v > 0 else 0.0
-    return vals, exp_curve, turnover, log
+    return vals, exp_curve, contributed_curve, flows, turnover, log
 
 
 def run_timing(cfg: TimingConfig, prices: pd.DataFrame) -> TimingResult:
@@ -199,30 +259,56 @@ def run_timing(cfg: TimingConfig, prices: pd.DataFrame) -> TimingResult:
     if n < 30:
         raise ValueError("Not enough price history.")
     exposure = target_exposure(cfg, close)
-    vals, exp_curve, turnover, log = _simulate(cfg, px, idx, exposure)
+    vals, exp_curve, contributed_curve, flows, turnover, log = _simulate(cfg, px, idx, exposure)
 
     years = max((idx[-1] - idx[0]).days / 365.25, 1e-9)
     cagr = (vals[-1] / vals[0]) ** (1 / years) - 1 if vals[0] > 0 else 0.0
     peak = np.maximum.accumulate(vals)
     mdd = float(((vals - peak) / np.where(peak == 0, 1, peak)).min())
-    r = pd.Series(vals).pct_change().fillna(0.0)
+    # Recurring-contribution studies can begin at zero before the first deposit;
+    # replace that initial infinite percentage change with zero for diagnostics.
+    r = pd.Series(vals).pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
     sharpe = float((r.mean() / r.std()) * np.sqrt(TRADING_DAYS)) if r.std() > 0 else 0.0
     downside = np.minimum(r.to_numpy(), 0.0)
     dstd = np.sqrt(np.mean(downside ** 2))
     sortino = float((r.mean() * TRADING_DAYS) / (dstd * np.sqrt(TRADING_DAYS))) if dstd > 0 else 0.0
+
+    total_contributed = float(contributed_curve[-1]) if n else 0.0
+    irr = 0.0
+    if flows and vals[-1] > 0:
+        from dca.engine import annualized_irr
+        irr = annualized_irr([*flows, (idx[-1].date(), float(vals[-1]))])
+
+    # Unitize the account so deposits do not count as investment gains or hide
+    # drawdowns.  This is the appropriate return path for recurring cash flows.
+    external_flows = np.diff(contributed_curve, prepend=0.0)
+    nav = np.ones(n)
+    for t in range(n):
+        if t == 0 or vals[t - 1] <= 0:
+            nav[t] = vals[t] / external_flows[t] if external_flows[t] > 0 else 1.0
+        else:
+            nav[t] = nav[t - 1] * ((vals[t] - external_flows[t]) / vals[t - 1])
+    nav_peak = np.maximum.accumulate(nav)
+    adjusted_mdd = float(((nav - nav_peak) / np.where(nav_peak == 0, 1, nav_peak)).min())
+    twr_cagr = nav[-1] ** (1 / years) - 1 if n and nav[-1] > 0 else 0.0
 
     def snum(x):
         return 0.0 if (x is None or np.isnan(x) or np.isinf(x)) else float(x)
 
     summary = {
         "Final Value": snum(vals[-1]),
+        "Total Contributed": snum(total_contributed),
+        "Profit": snum(vals[-1] - total_contributed),
+        "Money-Weighted Return (IRR)": snum(irr),
+        "Time-Weighted CAGR": snum(twr_cagr),
         "CAGR": snum(cagr),
         "Max Drawdown": snum(mdd),
+        "Cash-Flow Adjusted Max Drawdown": snum(adjusted_mdd),
         "Sharpe Ratio": snum(sharpe),
         "Sortino Ratio": snum(sortino),
         "Calmar Ratio": snum(cagr / abs(mdd)) if mdd < 0 else 0.0,
         "Avg Exposure": snum(np.mean(exp_curve)),
-        "Turnover / yr": snum(turnover / cfg.start_capital / years),
+        "Turnover / yr": snum(turnover / max(cfg.start_capital, total_contributed, 1.0) / years),
         "Rebalances": len(log),
     }
     return TimingResult(

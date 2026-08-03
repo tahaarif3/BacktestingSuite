@@ -60,3 +60,63 @@ def test_deterministic():
     a = run_timing(TimingConfig(strategy="ma", ma_period=50), df)
     b = run_timing(TimingConfig(strategy="ma", ma_period=50), df)
     assert a.value == b.value
+
+
+def test_weekly_contributions_are_invested_and_report_irr():
+    df = _series(100 * (1.0004) ** np.arange(500))
+    cfg = TimingConfig(
+        strategy="buy_hold",
+        start_capital=0,
+        contribution_amount=25,
+        contribution_cadence="weekly",
+        contribution_day="start",
+    )
+    r = run_timing(cfg, df)
+    weeks = df.index.isocalendar()[["year", "week"]].drop_duplicates().shape[0]
+    assert r.summary["Total Contributed"] == pytest.approx(25 * weeks)
+    assert r.summary["Final Value"] > r.summary["Total Contributed"]
+    assert r.summary["Money-Weighted Return (IRR)"] > 0
+    assert r.summary["Avg Exposure"] == pytest.approx(1.0, abs=0.02)
+
+
+def test_contribution_day_forces_allocation_despite_rebalance_band():
+    df = _series(np.full(300, 100.0))
+    r = run_timing(TimingConfig(
+        strategy="buy_hold",
+        start_capital=0,
+        contribution_amount=25,
+        contribution_cadence="weekly",
+        rebalance_band=0.50,
+        cash_yield_annual=0.0,
+        cost_pct=0.0,
+    ), df)
+    assert r.summary["Final Value"] == pytest.approx(r.summary["Total Contributed"])
+    assert r.summary["Avg Exposure"] == pytest.approx(1.0, abs=0.03)
+    assert r.summary["Time-Weighted CAGR"] == pytest.approx(0.0, abs=1e-10)
+    assert r.summary["Cash-Flow Adjusted Max Drawdown"] == pytest.approx(0.0, abs=1e-10)
+
+
+def test_contribution_gate_holds_cash_until_price_clears_ma():
+    close = np.concatenate([np.linspace(100, 70, 160), np.linspace(70, 140, 240)])
+    df = _series(close)
+    gated = run_timing(TimingConfig(
+        strategy="buy_hold",
+        start_capital=0,
+        contribution_amount=25,
+        contribution_buy_rule="above_ma",
+        contribution_ma_period=50,
+        cash_yield_annual=0.0,
+        cost_pct=0.0,
+    ), df)
+    always = run_timing(TimingConfig(
+        strategy="buy_hold",
+        start_capital=0,
+        contribution_amount=25,
+        contribution_buy_rule="always",
+        contribution_ma_period=50,
+        cash_yield_annual=0.0,
+        cost_pct=0.0,
+    ), df)
+    assert gated.summary["Total Contributed"] == always.summary["Total Contributed"]
+    assert min(gated.exposure[60:150]) < 0.5
+    assert gated.exposure[-1] > 0.95

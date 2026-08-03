@@ -12,7 +12,7 @@ Daily sequence (order matters, prevents same-day close->open leakage):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -128,7 +128,9 @@ def run_portfolio_backtest(
                 if cfg.gap_reject_pct is not None and open_today > c["signal_close"] * (1 + cfg.gap_reject_pct):
                     continue
                 fill = entry_fill(open_today, cfg)
-                stop = c["proposed_stop"]
+                # The specification defines the initial stop from the actual
+                # next-open entry, not from yesterday's signal close.
+                stop = fill - cfg.stop_atr_mult * c["atr"]
                 if fill - stop <= 0:
                     continue
                 shares = size_position(eq_ref, pf.cash, fill, stop, cfg)
